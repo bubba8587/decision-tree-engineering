@@ -33,7 +33,9 @@ permission is gone and the action becomes an inbox item instead.
 
 ## Before you change anything
 
-1. `python tools/dte.py tree` to see the current tree and the inbox.
+1. `python tools/dte.py tree` to see the current tree and the inbox, and
+   `python tools/dte.py show <ID>` to read any one decision without
+   opening the file.
 2. If you are about to edit an existing node, run
    `python tools/dte.py blast <ID>` first and read the whole report.
    Everything listed is your responsibility to reconcile.
@@ -49,12 +51,12 @@ permission is gone and the action becomes an inbox item instead.
   most specific node that explains it.
 - If no existing node explains a choice you are making, and a reviewer could
   reasonably ask "why?", that is a new decision. Decide where it belongs:
-  - **At your ring or deeper**: create it. `python tools/dte.py next <ring>`
-    for the ID; never pick numbers by hand. Frontmatter per SPEC section 4,
-    `made_by: ai`, `by: <your model name>`, `status: active`, real
-    `parents`. Say what you decided, why the parents demanded it, and what
-    it implies. `confidence: medium` or `low` when guessing the owner's
-    preference, and say so.
+  - **At your ring or deeper**: create it with
+    `python tools/dte.py new <ring> --title "..." --by <your model name>
+    --parents ... --decision "..." --why "..."`. Never hand-write
+    frontmatter and never pick numbers by hand (B26). Say what you decided,
+    why the parents demanded it, and what it implies. `--confidence medium`
+    or `low` when guessing the owner's preference, and say so.
   - **Shallower than your ring, or you are not sure**: do not create it.
     Write `decisions/inbox/<slug>.md` (SPEC section 7, Escalate) and ask
     the holder of that ring in chat, giving the title. It gets an ID only

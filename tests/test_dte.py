@@ -1,8 +1,9 @@
-"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11
+"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11,B26,C12,C13
 
 Run: python -m unittest discover -s tests
 """
 import io
+import json
 import os
 import subprocess
 import sys
@@ -523,6 +524,131 @@ class TestRetire(Base):
         self.assertIn("candidates to return", out)
         self.assertIn('B1 "B1 title"', out)
         self.assertIn("git log --all", out)
+
+
+class TestAuthoring(Base):
+    """dte:B26, dte:C12, dte:C13"""
+
+    def test_new_writes_a_valid_node(self):
+        code, out = run(self.root, "new", "C", "--title", "A fresh rule", "--by", "agent",
+                        "--parents", "B1", "--decision", "d", "--why", "w", "--confidence", "medium")
+        self.assertEqual(code, 0, out)
+        self.assertIn('created C2 "A fresh rule"', out)
+        text = self._read("decisions/C/C2.md")
+        self.assertIn("id: C2", text)
+        self.assertIn("parents: [B1]", text)
+        self.assertIn("made_by: ai", text)
+        self.assertIn("confidence: medium", text)
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("TODO", out)
+
+    def test_new_without_text_warns_todo(self):
+        run(self.root, "new", "C", "--title", "Half done", "--by", "agent", "--parents", "B1")
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        self.assertIn("C2: body still has TODO", out)
+
+    def test_new_refuses_bad_parent(self):
+        code, out = run(self.root, "new", "B", "--title", "x", "--by", "agent", "--parents", "B1")
+        self.assertEqual(code, 2)
+        self.assertIn("not shallower", out)
+        code, out = run(self.root, "new", "A", "--title", "x", "--by", "owner", "--made-by", "human")
+        self.assertEqual(code, 0, out)
+        self.assertIn("created A2", out)
+
+    def test_show(self):
+        code, out = run(self.root, "show", "C1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("C1  <-  B1  <-  A1", out)
+        self.assertIn("src/a.py  lines 1", out)
+        code, out = run(self.root, "show", "B1")
+        self.assertIn("children (1):", out)
+        self.assertIn("C1 C1 title", out)
+
+    def test_show_retired(self):
+        self._init_repo()
+        run(self.root, "retire", "C1", "--by", "agent", "--authorized-by", "owner")
+        code, out = run(self.root, "show", "C1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("RETIRED", out)
+        self.assertIn("authorized by owner", out)
+
+    def test_find(self):
+        code, out = run(self.root, "find", "b1 title")
+        self.assertIn("B1 B1 title", out)
+        code, out = run(self.root, "find", "nothing-like-this")
+        self.assertIn("no matches", out)
+
+    def test_ratify_flips_proposed_and_holds(self):
+        write_node(self.root, id="B1", parents="A1", made_by="ai", status="proposed")
+        code, out = run(self.root, "ratify", "B1", "--by", "owner")
+        self.assertEqual(code, 0, out)
+        self.assertIn("proposed -> active", out)
+        text = self._read("decisions/B/B1.md")
+        self.assertIn("ratified_by: owner", text)
+        self.assertIn("status: active", text)
+        code, out = run(self.root, "ratify", "B2", "--by", "owner")
+        self.assertEqual(code, 2)   # human-made
+
+    def test_conflict_declares_both_sides(self):
+        code, out = run(self.root, "conflict", "C1", "B2")
+        self.assertEqual(code, 0, out)
+        self.assertIn("B2 wins", out)
+        self.assertIn("conflicts_with: [B2]", self._read("decisions/C/C1.md"))
+        self.assertIn("conflicts_with: [C1]", self._read("decisions/B/B2.md"))
+        code, out = run(self.root, "conflicts")
+        self.assertIn("B2 wins (ring B over C)", out)
+
+    def test_retired_lists_ledger(self):
+        code, out = run(self.root, "retired")
+        self.assertIn("Ledger empty", out)
+        self._init_repo()
+        run(self.root, "retire", "C1", "--by", "agent", "--authorized-by", "owner")
+        code, out = run(self.root, "retired")
+        self.assertIn("C1", out)
+        self.assertIn("reverted", out)
+        self.assertIn("authorized by owner", out)
+
+    def test_export_is_json_with_join_keys(self):
+        code, out = run(self.root, "export")
+        self.assertEqual(code, 0)
+        data = json.loads(out)
+        self.assertEqual({n["id"] for n in data["nodes"]}, {"A1", "B1", "B2", "C1"})
+        self.assertIn({"file": "src/a.py", "line": 1, "id": "C1"}, data["citations"])
+        self.assertEqual(data["errors"], [])
+        out_path = os.path.join(self.root, "tree.json")
+        code, out = run(self.root, "export", "--out", out_path)
+        self.assertTrue(os.path.exists(out_path))
+
+    def test_init_scaffolds_and_never_overwrites(self):
+        with tempfile.TemporaryDirectory() as empty:
+            code, out = run(empty, "init")
+            self.assertEqual(code, 0, out)
+            self.assertTrue(os.path.exists(os.path.join(empty, "dte.cfg")))
+            self.assertTrue(os.path.exists(os.path.join(empty, ".dteignore")))
+            self.assertTrue(os.path.isdir(os.path.join(empty, "decisions", "inbox")))
+            with open(os.path.join(empty, "dte.cfg"), "w") as fh:
+                fh.write("summaries = off\n")
+            code, out = run(empty, "init")
+            self.assertIn("left alone", out)
+            with open(os.path.join(empty, "dte.cfg")) as fh:
+                self.assertEqual(fh.read(), "summaries = off\n")
+
+    def test_dte_ring_env_is_default_for_as(self):
+        self._init_repo()
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        old = os.environ.get("DTE_RING")
+        os.environ["DTE_RING"] = "C"
+        try:
+            code, out = run(self.root, "validate")
+        finally:
+            if old is None:
+                del os.environ["DTE_RING"]
+            else:
+                os.environ["DTE_RING"] = old
+        self.assertEqual(code, 1)
+        self.assertIn("B3: changed by an agent at ring C", out)
 
 
 class TestQueries(Base):

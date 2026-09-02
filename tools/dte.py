@@ -3,19 +3,29 @@
 
 One file, standard library only, Python 3.8+. Copy it into any project.
 
-    python dte.py validate [--as RING]   check the tree; exit 1 on errors
-    python dte.py tree [--files]         print the tree ring by ring
-    python dte.py blast <ID>             blast radius of a node
+  ask the tree
+    python dte.py show <ID>              one decision: lineage, children, citing lines, body
+    python dte.py find <text>            search ids, titles, bodies, ledger, inbox
+    python dte.py tree [--files]         the whole tree, ring by ring
+    python dte.py blast <ID>             what would changing this touch?
     python dte.py trace <path>           why does this artifact exist?
     python dte.py conflicts              declared contradictions and who wins
     python dte.py coverage               artifacts with no citation
+    python dte.py scope                  advisory: no reach, too broad, skipped rings
+    python dte.py retired                the ledger
+    python dte.py authority [ring]       who holds each ring (whom to ask)
     python dte.py next <ring>            next free id in a ring
+  change the tree (frontmatter is never hand-edited)
+    python dte.py new <ring> --title T --by NAME [--parents A1] [--made-by ai|human|joint]
+    python dte.py ratify <ID> --by HUMAN
+    python dte.py conflict <A> <B>       declare a contradiction on both sides
     python dte.py move <ID> <ring> --by NAME [--parents A1] [--authorized-by NAME]
     python dte.py retire <ID> --by NAME [--superseded-by NEW] [--authorized-by NAME]
-    python dte.py scope                  advisory: no reach, too broad, skipped rings
-    python dte.py inbox                  decisions waiting to be placed
-    python dte.py place <slug> <ring> --by NAME [--parents A1,B2]
-    python dte.py authority [ring]       who holds each ring (whom to ask)
+    python dte.py inbox / place <slug> <ring> --by NAME [--parents A1,B2]
+  check and integrate
+    python dte.py validate [--as RING]   consistency; exit 1 on errors ($DTE_RING is the default ring)
+    python dte.py export [--out FILE]    JSON of nodes, citations, ledger, inbox
+    python dte.py init                   scaffold decisions/, dte.cfg, .dteignore in a new project
 
 Options: --root DIR (default: cwd)  --decisions DIR (default: ROOT/decisions)
 Config:  ROOT/dte.cfg, key = value lines (summaries, protect_human, authority,
@@ -24,6 +34,7 @@ Config:  ROOT/dte.cfg, key = value lines (summaries, protect_human, authority,
 import argparse
 import datetime
 import fnmatch
+import json
 import os
 import re
 import subprocess
@@ -399,6 +410,8 @@ class Tree:
                 W.append("%s: title is %d chars; keep the summary under %d" % (i, len(node.title), TITLE_MAX))
             if "## Decision" not in node.body or "## Why" not in node.body:
                 E.append("%s: body needs '## Decision' and '## Why' sections" % i)
+            if re.search(r"^TODO$", node.body, re.M):
+                W.append("%s: body still has a TODO placeholder; finish it" % i)
             # R1 parents  dte:B10
             if node.ring == "A" and node.parents:
                 E.append("%s: core (A) nodes cannot have parents" % i)
@@ -1248,6 +1261,336 @@ def cmd_authority(tree, args):
     return 0
 
 
+# ---------------------------------------------------------------- authoring  dte:B26
+
+CFG_TEMPLATE = """# DTE configuration. One key = value per line. Every key shown with its default.
+#
+# summaries: print "ID title" everywhere (on) or bare IDs (off).
+summaries = on
+#
+# protect_human: nodes made or ratified by a human need authorized_by (a human's
+# name) before they can be superseded, reverted, or moved.
+protect_human = on
+#
+# authority: advisory map of who holds each ring. "C+" means C and deeper.
+# Binds agents, never humans. Unmapped rings mean "ask the human".
+authority = A:human, B:orchestrator, C+:subagent
+#
+# retire: delete removes a retired node's file (needs git; the ledger
+# decisions/RETIRED burns the number); keep sets a status instead.
+retire = delete
+#
+# scope checks (advisory). docs: artifacts that describe decisions rather than
+# implement them; they do not count as reach.
+docs = *.md, docs/*
+broad_fraction = 0.3
+broad_min = 5
+"""
+
+IGNORE_TEMPLATE = """# Globs the dte scanner skips (in addition to .git and the decisions dir).
+node_modules
+vendor
+dist
+build
+target
+__pycache__
+*.min.js
+*.lock
+*.png
+*.jpg
+*.gif
+*.pdf
+"""
+
+
+def build_frontmatter(fields):
+    lines = ["---"]
+    for k, v in fields:
+        if isinstance(v, list):
+            lines.append("%s: [%s]" % (k, ", ".join(v)))
+        elif v is None or v == "":
+            lines.append("%s:" % k)
+        else:
+            lines.append("%s: %s" % (k, v))
+    lines.append("---")
+    return "\n".join(lines) + "\n"
+
+
+def check_parents(tree, ring, parents):
+    if ring == "A" and parents:
+        return "ring A nodes cannot have parents"
+    if ring != "A" and not parents:
+        return "a ring %s node needs parents; pass --parents A1,B2" % ring
+    for p in parents:
+        if p not in tree.nodes:
+            return "parent %s %s" % (p, tree.retired_hint(p))
+        if ring_depth(tree.nodes[p].ring) >= ring_depth(ring):
+            return "parent %s is not shallower than ring %s" % (p, ring)
+    return None
+
+
+def split_ids(s):
+    return [p.strip() for p in (s or "").split(",") if p.strip()]
+
+
+def cmd_new(tree, args):
+    """dte:B26"""
+    ring = args.ring.upper()
+    if not re.match(r"^[A-Z]$", ring):
+        print("ring must be a single letter A-Z")
+        return 2
+    if args.made_by not in MADE_BY:
+        print("--made-by must be one of %s" % sorted(MADE_BY))
+        return 2
+    if args.status not in ("active", "proposed"):
+        print("--status must be active or proposed")
+        return 2
+    parents = split_ids(args.parents)
+    err = check_parents(tree, ring, parents)
+    if err:
+        print(err)
+        return 2
+    new_id = next_id(tree, ring)
+    fields = [
+        ("id", new_id), ("title", args.title), ("status", args.status), ("parents", parents),
+        ("supersedes", []), ("superseded_by", ""), ("conflicts_with", []),
+        ("made_by", args.made_by), ("by", args.by),
+        ("date", datetime.date.today().isoformat()), ("ratified_by", ""),
+    ]
+    if args.authorized_by:
+        fields.append(("authorized_by", args.authorized_by))
+    if args.confidence:
+        fields.append(("confidence", args.confidence))
+    body = "\n## Decision\n\n%s\n\n## Why\n\n%s\n" % (args.decision or "TODO", args.why or "TODO")
+    if args.consequences:
+        body += "\n## Consequences\n\n%s\n" % args.consequences
+    dest_dir = os.path.join(tree.decisions_dir, ring)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, new_id + ".md")
+    write_text(dest, build_frontmatter(fields) + body)
+    print('created %s "%s" at %s' % (new_id, args.title, tree.rel(dest)))
+    todo = [] if (args.decision and args.why) else ["fill in the TODO sections"]
+    print("  " + "; ".join(todo + ["cite it as dte:%s from what it governs" % new_id]))
+    return 0
+
+
+def cmd_show(tree, args):
+    """dte:B26"""
+    tree.validate()
+    i = args.id
+    node = tree.nodes.get(i)
+    if node is None:
+        if i in tree.retired:
+            row = tree.retired[i]
+            print('%s "%s"  RETIRED' % (i, row["title"]))
+            print("  %s" % tree.retired_hint(i))
+            print("  by %s%s" % (row["by"], ("; authorized by " + row["authorized_by"]) if row["authorized_by"] else ""))
+            return 0
+        print("unknown id: %s" % i)
+        return 2
+    print(node.label())
+    print("  file: %s" % tree.rel(node.path))
+    print("  status: %s   made_by: %s   by: %s   date: %s"
+          % (node.status, node.made_by, node.by, node.raw.get("date") or "?"))
+    extra = []
+    if node.ratified_by:
+        extra.append("ratified_by: %s" % node.ratified_by)
+    if node.authorized_by:
+        extra.append("authorized_by: %s" % node.authorized_by)
+    if node.confidence:
+        extra.append("confidence: %s" % node.confidence)
+    if extra:
+        print("  " + "   ".join(extra))
+    if node.parents:
+        print("  parents:")
+        for p in node.parents:
+            print("    " + (tree.nodes[p].label() if p in tree.nodes else "%s (%s)" % (p, tree.retired_hint(p))))
+        print("  lineage to the core:")
+        for chain in tree.ancestors(i):
+            print("    " + "  <-  ".join(chain))
+    else:
+        print("  parents: none (core)")
+    kids = tree.ordered(tree.children.get(i, []))
+    print("  children (%d):" % len(kids))
+    for c in kids:
+        print("    " + tree.nodes[c].label())
+    hits = defaultdict(list)
+    for rel, ln, cid, r in tree.citations:
+        if r == i:
+            hits[rel].append(ln)
+    print("  citing artifacts (%d):" % len(hits))
+    for rel in sorted(hits):
+        print("    %s  lines %s" % (rel, ", ".join(str(x) for x in sorted(hits[rel]))))
+    if node.supersedes:
+        print("  supersedes: " + ", ".join(node.supersedes))
+    if node.superseded_by:
+        print("  superseded_by: %s" % node.superseded_by)
+    if node.conflicts_with:
+        print("  conflicts_with: " + ", ".join(node.conflicts_with))
+    print()
+    for line in node.body.strip("\n").splitlines():
+        print("  " + line)
+    return 0
+
+
+def cmd_find(tree, args):
+    """dte:B26"""
+    q = args.text.lower()
+    n = 0
+    for node in tree.ordered_nodes():
+        hay = (node.id + " " + node.title + " " + node.body).lower()
+        if q in hay:
+            n += 1
+            print(node.label())
+            if q not in (node.id + " " + node.title).lower():
+                for line in node.body.splitlines():
+                    if q in line.lower():
+                        print("    " + line.strip()[:110])
+                        break
+    for i, row in sorted(tree.retired.items(), key=lambda kv: id_key(kv[0])):
+        if q in (i + " " + row["title"]).lower():
+            n += 1
+            print('%s "%s"  [retired: %s]' % (i, row["title"], row["action"]))
+    for it in tree.inbox:
+        if q in (it.slug + " " + it.title + " " + it.body).lower():
+            n += 1
+            print('inbox/%s "%s"  [pending placement]' % (it.slug, it.title))
+    if not n:
+        print("no matches for %r" % args.text)
+    return 0
+
+
+def cmd_ratify(tree, args):
+    """dte:B26, dte:B7"""
+    node = tree.nodes.get(args.id)
+    if node is None:
+        print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
+        return 2
+    if not node.in_effect:
+        print("%s is %s; only in-effect nodes are ratified" % (args.id, node.status))
+        return 2
+    if node.made_by == "human":
+        print("%s is human-made; ratification is for ai and joint nodes" % args.id)
+        return 2
+    text = read_text(node.path)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    text = set_field(text, "ratified_by", args.by)
+    flipped = node.status == "proposed"
+    if flipped:
+        text = set_field(text, "status", "active")
+    text = append_history(text, "- %s ratified by %s%s." % (
+        datetime.date.today().isoformat(), args.by, " (proposed -> active)" if flipped else ""))
+    write_text(node.path, text.replace("\n", nl))
+    print('ratified %s "%s" by %s%s' % (args.id, node.title, args.by,
+                                        "; status proposed -> active" if flipped else ""))
+    print("  it is now human-held (B11)")
+    return 0
+
+
+def cmd_conflict(tree, args):
+    """dte:B26, dte:B4"""
+    a, b = args.a, args.b
+    if a == b:
+        print("a node cannot contradict itself")
+        return 2
+    for x in (a, b):
+        if x not in tree.nodes:
+            print("unknown id: %s (%s)" % (x, tree.retired_hint(x)))
+            return 2
+        if not tree.nodes[x].in_effect:
+            print("%s is %s" % (x, tree.nodes[x].status))
+            return 2
+    for x, y in ((a, b), (b, a)):
+        n = tree.nodes[x]
+        if y not in n.conflicts_with:
+            text = read_text(n.path)
+            nl = "\r\n" if "\r\n" in text else "\n"
+            text = text.replace("\r\n", "\n")
+            text = set_field(text, "conflicts_with", "[%s]" % ", ".join(n.conflicts_with + [y]))
+            write_text(n.path, text.replace("\n", nl))
+    na, nb = tree.nodes[a], tree.nodes[b]
+    print("declared: %s  vs  %s" % (na.label(), nb.label()))
+    if ring_depth(na.ring) < ring_depth(nb.ring):
+        print("  %s wins (ring %s over %s)" % (a, na.ring, nb.ring))
+    elif ring_depth(na.ring) > ring_depth(nb.ring):
+        print("  %s wins (ring %s over %s)" % (b, nb.ring, na.ring))
+    else:
+        print("  SAME RING: validate will fail until one is superseded or moved (B4)")
+    return 0
+
+
+def cmd_retired(tree, args):
+    """dte:B26, dte:C11"""
+    if not tree.retired:
+        print("Ledger empty. Nothing has been retired.")
+        return 0
+    for i, row in sorted(tree.retired.items(), key=lambda kv: id_key(kv[0])):
+        fate = row["action"] + ((" -> " + row["successor"]) if row["successor"] else "")
+        auth = ("  authorized by " + row["authorized_by"]) if row["authorized_by"] else ""
+        print('%-5s %s  %-18s by %s%s  "%s"' % (i, row["date"], fate, row["by"], auth, row["title"]))
+    return 0
+
+
+def cmd_export(tree, args):
+    """dte:C12"""
+    tree.validate()
+    nodes = []
+    for n in tree.ordered_nodes():
+        d = {k: v for k, v in n.raw.items()}
+        d["ring"] = n.ring
+        d["path"] = tree.rel(n.path)
+        nodes.append(d)
+    data = {
+        "nodes": nodes,
+        "citations": [{"file": rel, "line": ln, "id": cid} for rel, ln, cid, r in tree.citations],
+        "retired": [tree.retired[i] for i in sorted(tree.retired, key=id_key)],
+        "inbox": [{"slug": it.slug, "title": it.title, "proposed_ring": it.proposed_ring,
+                   "ask": it.ask, "made_by": it.made_by, "by": it.by} for it in tree.inbox],
+        "errors": tree.errors,
+        "warnings": tree.warnings,
+    }
+    text = json.dumps(data, indent=2, sort_keys=True)
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as fh:
+            fh.write(text + "\n")
+        print("wrote %s: %d nodes, %d citations, %d retired, %d inbox"
+              % (args.out, len(nodes), len(data["citations"]), len(data["retired"]), len(data["inbox"])))
+    else:
+        print(text)
+    return 0
+
+
+def cmd_init(tree, args):
+    """dte:C13"""
+    root = os.path.abspath(args.root)
+    made, kept = [], []
+    for rel, content in (("dte.cfg", CFG_TEMPLATE), (".dteignore", IGNORE_TEMPLATE)):
+        p = os.path.join(root, rel)
+        if os.path.exists(p):
+            kept.append(rel)
+        else:
+            with open(p, "w", encoding="utf-8") as fh:
+                fh.write(content)
+            made.append(rel)
+    inbox = os.path.join(root, "decisions", INBOX_DIR)
+    if os.path.isdir(inbox):
+        kept.append("decisions/")
+    else:
+        os.makedirs(inbox, exist_ok=True)
+        made.append("decisions/ (with inbox/)")
+    if made:
+        print("created: " + ", ".join(made))
+    if kept:
+        print("left alone (already existed): " + ", ".join(kept))
+    print("next:")
+    print("  1. write the core: dte new A --title \"<goal>\" --by <owner> --made-by human   (three to six of these)")
+    print("  2. edit dte.cfg: authority map, docs globs, retire mode")
+    print("  3. put the agent protocol (CLAUDE.md from the DTE repo) into your agent instructions")
+    print("  4. dte validate, then dte coverage: that number is the adoption gauge")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="dte", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1255,8 +1598,8 @@ def main(argv=None):
     ap.add_argument("--decisions", default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
-    v.add_argument("--as", dest="as_ring", default=None, metavar="RING",
-                   help="check changed nodes against an agent's ring (B15)")
+    v.add_argument("--as", dest="as_ring", default=os.environ.get("DTE_RING") or None, metavar="RING",
+                   help="check changed nodes against an agent's ring (B15); default $DTE_RING")
     t = sub.add_parser("tree")
     t.add_argument("--files", action="store_true", help="show citing artifacts under each node")
     sub.add_parser("blast").add_argument("id")
@@ -1286,6 +1629,31 @@ def main(argv=None):
                    help="human authorising the retirement of a human-held node")
     a = sub.add_parser("authority")
     a.add_argument("ring", nargs="?", default=None)
+    n = sub.add_parser("new")
+    n.add_argument("ring")
+    n.add_argument("--title", required=True)
+    n.add_argument("--by", required=True)
+    n.add_argument("--parents", default=None, help="comma-separated parent ids")
+    n.add_argument("--made-by", dest="made_by", default="ai", help="ai | human | joint")
+    n.add_argument("--status", default="active", help="active | proposed")
+    n.add_argument("--confidence", default=None, help="low | medium | high")
+    n.add_argument("--decision", default=None, help="text of the Decision section")
+    n.add_argument("--why", default=None, help="text of the Why section")
+    n.add_argument("--consequences", default=None, help="text of the Consequences section")
+    n.add_argument("--authorized-by", dest="authorized_by", default=None,
+                   help="human authorising an agent to write this node above its ring")
+    sub.add_parser("show").add_argument("id")
+    sub.add_parser("find").add_argument("text")
+    ra = sub.add_parser("ratify")
+    ra.add_argument("id")
+    ra.add_argument("--by", required=True, help="the human ratifying")
+    cf = sub.add_parser("conflict")
+    cf.add_argument("a")
+    cf.add_argument("b")
+    sub.add_parser("retired")
+    ex = sub.add_parser("export")
+    ex.add_argument("--out", default=None)
+    sub.add_parser("init")
     args = ap.parse_args(argv)
     CONFIG.clear()
     CONFIG.update(load_config(args.root))
@@ -1296,6 +1664,9 @@ def main(argv=None):
         "trace": cmd_trace, "conflicts": cmd_conflicts, "coverage": cmd_coverage,
         "next": cmd_next, "scope": cmd_scope, "inbox": cmd_inbox, "place": cmd_place,
         "authority": cmd_authority, "move": cmd_move, "retire": cmd_retire,
+        "new": cmd_new, "show": cmd_show, "find": cmd_find, "ratify": cmd_ratify,
+        "conflict": cmd_conflict, "retired": cmd_retired, "export": cmd_export,
+        "init": cmd_init,
     }[args.cmd](tree, args)
 
 

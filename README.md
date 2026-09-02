@@ -52,20 +52,30 @@ Any artifact cites a decision with the token `dte:ID` in a comment or in prose.
 ## Ask the tree
 
 ```
-python tools/dte.py validate          # is the tree consistent?
-python tools/dte.py tree              # print the whole tree, ring by ring
+# ask the tree
+python tools/dte.py show B3           # one decision: lineage, children, citing lines, body
+python tools/dte.py find "alias"      # search ids, titles, bodies, ledger, inbox
+python tools/dte.py tree              # the whole tree, ring by ring
 python tools/dte.py blast B3          # what would changing B3 touch?
 python tools/dte.py trace tools/dte.py   # why does this file exist?
 python tools/dte.py conflicts         # who wins each contradiction?
 python tools/dte.py coverage          # which artifacts have no lineage yet?
-python tools/dte.py next C            # next free id in ring C
-python tools/dte.py inbox             # decisions waiting for someone to place them
-python tools/dte.py place <slug> B --by owner   # give an inbox item an ID in ring B
-python tools/dte.py authority         # who holds each ring, so whom to ask
-python tools/dte.py validate --as C   # as an agent at ring C: did I overstep?
 python tools/dte.py scope             # advisory: dead nodes, over-broad nodes, skipped rings
-python tools/dte.py move C4 B --by owner   # promote: new id, old node retired, references rewritten
+python tools/dte.py retired           # the ledger of retired ids
+python tools/dte.py authority         # who holds each ring, so whom to ask
+
+# change the tree (frontmatter is never hand-edited)
+python tools/dte.py new C --title "..." --by agent --parents B3 --decision "..." --why "..."
+python tools/dte.py ratify B3 --by owner
+python tools/dte.py conflict B4 C2    # declare a contradiction on both sides
+python tools/dte.py move C4 B --by owner              # promote: new id, old retired, references rewritten
 python tools/dte.py retire B5 --by owner --superseded-by B24   # retire through the ledger
+python tools/dte.py inbox / place <slug> B --by owner # escalation and placement
+
+# check and integrate
+python tools/dte.py validate --as C   # consistency; as an agent at ring C, did I overstep?
+python tools/dte.py export --out tree.json   # nodes, citations, ledger, inbox: join it to your graph
+python tools/dte.py init              # scaffold a new project
 ```
 
 Two more rules the tool enforces, both from the core:

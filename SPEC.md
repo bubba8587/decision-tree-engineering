@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B26 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -159,8 +159,11 @@ Optional. One line per event: created, ratified, moved, superseded.
 
 ## 7. Operations
 
-**Add a decision.** `dte next <ring>` for the ID. Write the node. Set parents.
-Cite it from the artifacts it produces. Run `dte validate`.
+**Add a decision.** `dte new <ring> --title "..." --by <name> --parents A1
+[--decision "..." --why "..."]`. The tool allocates the ID and writes the
+node; unfilled sections are `TODO` and validate warns until they are
+written. Cite it from the artifacts it produces. Run `dte validate`.
+Frontmatter is never hand-edited (dte:B26).
 
 **Supersede.** Write the new node. Run `dte blast OLD`. Then
 `dte retire OLD --by <name> --superseded-by NEW [--authorized-by <human>]`:
@@ -195,9 +198,12 @@ has declared contradictions: promotion means it now wins ones it lost.
 Never `git mv` or hand-delete a node file; validation rejects renames and
 ledger-less deletions.
 
-**Ratify.** A human sets `ratified_by:` on an AI or joint node, and flips
-`proposed` to `active` if applicable. A ratified node is human-held from
-then on (dte:B11).
+**Ratify.** `dte ratify <ID> --by <human>` sets `ratified_by` and flips
+`proposed` to `active`. A ratified node is human-held from then on
+(dte:B11).
+
+**Declare a contradiction.** `dte conflict <A> <B>` writes `conflicts_with`
+on both nodes and prints the winner by ring (dte:B4).
 
 **Escalate (dte:B14).** When a decision belongs above your ring, or you do
 not know where it belongs, write `decisions/inbox/<slug>.md`:
@@ -308,9 +314,12 @@ the same depth to be useful.
 ## 13. Tooling contract (dte:B6)
 
 A conforming tool is a single file with no dependencies beyond the language
-runtime, and implements at least: `validate` (with `--as`), `tree`, `blast`,
-`trace`, `conflicts`, `coverage`, `next`, `inbox`, `place`, `authority`,
-`scope`, `move`, `retire`.
+runtime, and implements (dte:B26): asking the tree with `show`, `find`,
+`tree`, `blast`, `trace`, `conflicts`, `coverage`, `scope`, `retired`,
+`authority`, `next`; changing it with `new`, `ratify`, `conflict`, `move`,
+`retire`, `inbox`, `place`; and `validate` (with `--as`, defaulting to
+`$DTE_RING`), `export` (JSON: nodes, citations, ledger, inbox; the join
+surface for structural tools, dte:C12), and `init` (scaffold, dte:C13).
 Every output that names a node prints `ID title` unless summaries are off.
 The reference implementation is `tools/dte.py`. Exit code is non-zero when
 `validate` finds errors.

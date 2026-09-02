@@ -7,12 +7,14 @@ and only goes up. Nothing fails until the tree itself is inconsistent.
 
 ## Day one (an hour)
 
-1. Copy `tools/dte.py` into the project. Add `decisions/` and a `.dteignore`
-   listing vendored, generated, and binary directories.
+1. Copy `tools/dte.py` into the project and run `python dte.py init`. It
+   creates `decisions/`, a fully commented `dte.cfg`, and a `.dteignore`;
+   add vendored, generated, and binary directories to the ignore file.
 2. Write the core. Sit with the owner and state the project's abstract goals
-   in one or two sentences each. Three to six of them. These are `A1..An`,
-   `made_by: human`. Everything else will hang off these, so get the wording
-   right and keep them abstract: goals, not features.
+   in one or two sentences each. Three to six of them:
+   `dte new A --title "..." --by <owner> --made-by human --decision "..." --why "..."`.
+   Everything else will hang off these, so get the wording right and keep
+   them abstract: goals, not features.
 3. Run `python dte.py validate`. It should pass with zero citations.
 4. Run `python dte.py coverage`. That number is the adoption gauge.
 
