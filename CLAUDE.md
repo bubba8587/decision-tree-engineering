@@ -1,4 +1,4 @@
-<!-- dte:B8,B14,B15,B17,B18,B19,B20 -->
+<!-- dte:B8,B14,B15,B17,B18,B19,B20,B25 -->
 # Working in this repo (and any DTE repo)
 
 This project uses Decision Tree Engineering. Read `SPEC.md` once. Then follow
@@ -77,6 +77,18 @@ for every node; copy from there. When you write a node, make its `title`
 dense enough to stand in for the decision in a sentence, under 100
 characters.
 
+## What a node justifies, you do (B25)
+
+If an in-effect node covers an action, take it and report it as
+`ID "title"`. That line is the whole justification. Do not ask whether the
+owner would prefer otherwise, do not offer to stop doing it next time, and
+do not re-argue the node. Example: an owner decision forces an edit to a
+ring-A file; you write `authorized_by: project owner` on it and report
+"B11 'human-held nodes need authorized_by from a human to be superseded,
+reverted, or moved; configurable'". Done. Doubt belongs only to actions no
+node covers, and those go to the inbox, not into the report as hedges. The
+owner disagrees through ratification, not through your asking.
+
 ## When you report work (B17)
 
 Every time you tell the owner that something now exists or was built, name
@@ -100,8 +112,8 @@ artifact.
 
 ## Rings in this repo
 
-- `A` core goals. A1, A5, A6 are the owner's; A2 to A4 are proposed and
-  await ratification. Do not add to ring A. Inbox it and ask.
+- `A` core goals. A1, A5, A6, A7 are the owner's; A2 to A4 are proposed
+  and await ratification. Do not add to ring A. Inbox it and ask.
 - `B` format and rules of DTE itself.
 - `C` how the reference tool implements ring B.
 

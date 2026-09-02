@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,A7 -->
 # Decision Tree Engineering (DTE)
 
 **Every thing in a project exists because a decision was made.** DTE makes that
@@ -95,6 +95,6 @@ project.
 
 ## Status
 
-Day one. The A-ring is set (A1, A5, A6 placed by the project owner; A2 to A4
-proposed and awaiting ratification). Rings B and C describe the format and tooling. First
+Day one. The A-ring is set (A1, A5, A6, A7 placed by the project owner; A2
+to A4 proposed and awaiting ratification). Rings B and C describe the format and tooling. First
 external target: Solenoid NGC.
