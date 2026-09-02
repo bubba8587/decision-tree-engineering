@@ -388,7 +388,7 @@ class Tree:
     def ordered_nodes(self):
         return [self.nodes[i] for i in self.ordered()]
 
-    # -- validation (rules R1..R7 in SPEC)
+    # -- validation (rules R1..R9 in SPEC)
     def validate(self, as_ring=None):
         if self._validated:
             return not self.errors
@@ -696,10 +696,18 @@ class Tree:
             stack.extend((g, d + 1) for g in self.children.get(c, []))
         return out
 
+    MAX_CHAINS = 64
+
     def ancestors(self, i):
+        """Parent chains from i to the core, memoised and capped: a node with several
+        parents in each of several rings has combinatorially many chains."""
+        memo = self.__dict__.setdefault("_anc", {})
+        if i in memo:
+            return memo[i]
         node = self.nodes[i]
         if not node.parents:
-            return [[i]]
+            memo[i] = [[i]]
+            return memo[i]
         chains = []
         for p in node.parents:
             pid = self.resolve(p)
@@ -708,6 +716,11 @@ class Tree:
                 continue
             for chain in self.ancestors(pid):
                 chains.append([i] + chain)
+                if len(chains) >= self.MAX_CHAINS:
+                    break
+            if len(chains) >= self.MAX_CHAINS:
+                break
+        memo[i] = chains
         return chains
 
 
