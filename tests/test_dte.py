@@ -547,7 +547,7 @@ class TestAuthoring(Base):
         run(self.root, "new", "C", "--title", "Half done", "--by", "agent", "--parents", "B1")
         code, out = run(self.root, "validate")
         self.assertEqual(code, 0, out)
-        self.assertIn("C2: body still has TODO", out)
+        self.assertIn("C2: body still has a TODO placeholder", out)
 
     def test_new_refuses_bad_parent(self):
         code, out = run(self.root, "new", "B", "--title", "x", "--by", "agent", "--parents", "B1")
