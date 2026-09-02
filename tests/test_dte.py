@@ -22,7 +22,6 @@ parents: [{parents}]
 supersedes: [{supersedes}]
 superseded_by: {superseded_by}
 conflicts_with: [{conflicts}]
-aliases: [{aliases}]
 made_by: {made_by}
 by: tester
 date: 2026-09-02
@@ -59,7 +58,7 @@ def write_node(root, **kw):
     kw.setdefault("title", kw["id"] + " title")
     for f in ("status",):
         kw.setdefault(f, "active")
-    for f in ("parents", "supersedes", "superseded_by", "conflicts", "aliases",
+    for f in ("parents", "supersedes", "superseded_by", "conflicts",
               "ratified_by", "authorized_by"):
         kw.setdefault(f, "")
     kw.setdefault("made_by", "human")
@@ -100,7 +99,7 @@ class Base(unittest.TestCase):
         write_node(self.root, id="B2", parents="A1")
         write_node(self.root, id="C1", parents="B1")
         write_file(self.root, "src/a.py", "# dte:C1\nprint(1)\n")
-        write_file(self.root, "src/b.py", "# dte:B2\n")
+        write_file(self.root, "src/b.py", "# %s\n" % ("dte" + ":B2"))  # split: not a citation here
         write_file(self.root, "src/none.py", "print(2)\n")
 
     def tearDown(self):
@@ -141,13 +140,15 @@ class TestValidate(Base):
         self.assertEqual(code, 1)
         self.assertIn("same-ring contradiction", out)
 
-    def test_alias_resolves_with_warning(self):
-        # dte:B2  move B2 -> C2, keep alias (AI-made so no human-held check)
-        os.remove(os.path.join(self.root, "decisions", "B", "B2.md"))
-        write_node(self.root, id="C2", parents="A1", aliases="B2", made_by="ai")
+    def test_aliases_field_is_rejected(self):
+        # dte:B23
+        p = os.path.join(self.root, "decisions", "B", "B1.md")
+        with open(p, encoding="utf-8") as fh:
+            text = fh.read()
+        write_file(self.root, "decisions/B/B1.md", text.replace("made_by:", "aliases: [B9]\nmade_by:"))
         code, out = run(self.root, "validate")
-        self.assertEqual(code, 0, out)
-        self.assertIn("B2 is an alias of C2", out)
+        self.assertEqual(code, 1)
+        self.assertIn("unknown frontmatter field 'aliases'", out)
 
     def test_long_title_warns(self):
         # dte:B16
@@ -252,6 +253,20 @@ class TestAuthority(Base):
         self.assertEqual(code, 1)
         self.assertIn("B3: changed by an agent at ring C but lives at ring B; escalate to orchestrator", out)
 
+    def test_demotion_touches_the_shallower_file(self):
+        # dte:B23  the alias back door is closed: demoting B1 means editing a B file
+        self._init_repo()
+        code, out = run(self.root, "move", "B1", "C", "--by", "agent", "--parents", "B2")
+        self.assertEqual(code, 2)  # C1 is a child at ring C, refused
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "b3")
+        code, out = run(self.root, "move", "B3", "C", "--by", "agent", "--parents", "B2")
+        self.assertEqual(code, 0, out)
+        code, out = run(self.root, "validate", "--as", "C")
+        self.assertEqual(code, 1)
+        self.assertIn("B3: changed by an agent at ring C but lives at ring B", out)
+
     def test_authorized_change_above_ring_passes(self):
         self._init_repo()
         write_node(self.root, id="A2", authorized_by="owner")   # scribed for the human
@@ -265,6 +280,31 @@ class TestAuthority(Base):
         code, out = run(self.root, "validate")
         self.assertIn("Nodes changed in this working tree", out)
         self.assertIn("C2 a fresh node", out)
+
+    def test_deleted_node_file_is_error(self):
+        # dte:C10  a leaf with no children and no citations
+        write_node(self.root, id="C2", parents="B1", made_by="ai")
+        self._init_repo()
+        os.remove(os.path.join(self.root, "decisions", "C", "C2.md"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 1)
+        self.assertIn("decisions/C/C2.md: node file deleted", out)
+
+    def test_renamed_node_file_is_error(self):
+        # dte:C10  git mv is not a move
+        self._init_repo()
+        self._git("mv", "decisions/B/B2.md", "decisions/B/B9.md")
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 1)
+        self.assertIn("decisions/B/B2.md: node file renamed", out)
+
+    def test_placing_inbox_item_is_not_a_deletion(self):
+        write_inbox(self.root, "thing", "A thing", ring="B", parents="A1")
+        self._init_repo()
+        code, out = run(self.root, "place", "thing", "B", "--by", "owner")
+        self.assertEqual(code, 0, out)
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
 
     def test_agent_within_ring_passes(self):
         self._init_repo()
@@ -324,6 +364,59 @@ class TestScope(Base):
         self.assertIn("scope findings (advisory)", out)
 
 
+class TestMove(Base):
+    """dte:B23, dte:C9"""
+
+    def _read(self, rel):
+        with open(os.path.join(self.root, rel), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_move_supersedes_and_rewrites_everything(self):
+        write_node(self.root, id="D1", parents="C1", made_by="ai")
+        code, out = run(self.root, "move", "C1", "B", "--by", "owner", "--parents", "A1",
+                        "--authorized-by", "owner")  # C1 is human-made in the fixture
+        self.assertEqual(code, 0, out)
+        self.assertIn("moved C1 -> B3", out)
+        self.assertIn("DROPPED parents: B1", out)
+        old = self._read("decisions/C/C1.md")
+        self.assertIn("status: superseded", old)
+        self.assertIn("superseded_by: B3", old)
+        new = self._read("decisions/B/B3.md")
+        self.assertIn("id: B3", new)
+        self.assertIn("parents: [A1]", new)
+        self.assertIn("supersedes: [C1]", new)
+        self.assertIn("moved from C1 to ring B as B3 by owner", new)
+        self.assertIn("dte:B3", self._read("src/a.py"))
+        self.assertNotIn("dte:C1", self._read("src/a.py"))
+        self.assertIn("parents: [B3]", self._read("decisions/D/D1.md"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(run(self.root, "next", "C")[1].strip(), "C2")
+
+    def test_move_keeps_parents_that_are_still_shallower(self):
+        write_node(self.root, id="C2", parents="A1, B1", made_by="ai")
+        code, out = run(self.root, "move", "C2", "B", "--by", "owner")
+        self.assertEqual(code, 0, out)
+        self.assertIn("parents: A1", out)
+        self.assertIn("DROPPED parents: B1", out)
+
+    def test_move_of_human_held_needs_authorization(self):
+        code, out = run(self.root, "move", "B2", "C", "--by", "agent", "--parents", "B1")
+        self.assertEqual(code, 2)
+        self.assertIn("human-held", out)
+        code, out = run(self.root, "move", "B2", "C", "--by", "agent", "--parents", "B1",
+                        "--authorized-by", "owner")
+        self.assertEqual(code, 0, out)
+        self.assertIn("authorized_by: owner", self._read("decisions/B/B2.md"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+
+    def test_move_refuses_when_child_would_not_be_deeper(self):
+        code, out = run(self.root, "move", "B1", "C", "--by", "agent", "--parents", "B2")
+        self.assertEqual(code, 2)
+        self.assertIn("child C1", out)
+
+
 class TestQueries(Base):
     def test_blast_lists_descendants_and_artifacts(self):
         # dte:C2
@@ -357,10 +450,12 @@ class TestQueries(Base):
         self.assertIn("2/3", out)
         self.assertIn("src/none.py", out)
 
-    def test_next_skips_aliases(self):
-        os.remove(os.path.join(self.root, "decisions", "B", "B2.md"))
-        write_node(self.root, id="C2", parents="A1", aliases="B2", made_by="ai")
-        self.assertEqual(run(self.root, "next", "B")[1].strip(), "B3")
+    def test_next_never_reuses_retired_numbers(self):
+        # dte:B23  a superseded node keeps its file, so its number stays taken
+        write_node(self.root, id="B2", parents="A1", status="superseded", superseded_by="B3",
+                   authorized_by="owner")
+        write_node(self.root, id="B3", parents="A1", supersedes="B2")
+        self.assertEqual(run(self.root, "next", "B")[1].strip(), "B4")
         self.assertEqual(run(self.root, "next", "D")[1].strip(), "D1")
 
     def test_summaries_off_prints_bare_ids(self):

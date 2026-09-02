@@ -64,6 +64,7 @@ python tools/dte.py place <slug> B --by owner   # give an inbox item an ID in ri
 python tools/dte.py authority         # who holds each ring, so whom to ask
 python tools/dte.py validate --as C   # as an agent at ring C: did I overstep?
 python tools/dte.py scope             # advisory: dead nodes, over-broad nodes, skipped rings
+python tools/dte.py move C4 B --by owner   # promote: new id, old node superseded, references rewritten
 ```
 
 Two more rules the tool enforces, both from the core:

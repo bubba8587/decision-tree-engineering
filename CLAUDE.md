@@ -58,7 +58,10 @@ permission is gone and the action becomes an inbox item instead.
     Write `decisions/inbox/<slug>.md` (SPEC section 7, Escalate) and ask
     the holder of that ring in chat, giving the title. It gets an ID only
     when someone with authority runs `dte place`.
-- Never delete a decision file. Supersede or revert (SPEC section 7).
+- Never delete or rename a decision file. Supersede or revert (SPEC
+  section 7). To move a node between rings use `python tools/dte.py move`,
+  which supersedes the old node and rewrites every reference; there are no
+  aliases (B23).
 - Never resolve a contradiction by editing the loser. Precedence is
   position. If the ring order gives the wrong answer, that is a move, and
   moves above your ring are not yours to make.

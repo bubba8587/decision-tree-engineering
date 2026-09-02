@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B2,B3,B4,B5,B7,B10,B11,B12,B13,B14,B15,B16,B21 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B5,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -20,7 +20,7 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
   way. Recorded as a **node**.
 - **Node**: one markdown file describing one decision (dte:B1).
 - **Ring** (or **layer**): the depth of a node from the core. Ring 0 is `A`,
-  ring 1 is `B`, and so on (dte:B2).
+  ring 1 is `B`, and so on (dte:B23).
 - **Core**: the `A` ring. The abstract goals of the project. Core nodes have no
   parents (dte:B10).
 - **Parent**: a node this node exists *because of*. Parents are always in a
@@ -43,7 +43,7 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
 - **Summary**: the node's `title`, which always accompanies its ID when a
   model refers to it (dte:A5, dte:B16).
 
-## 3. Identity and rings (dte:B2)
+## 3. Identity and rings (dte:B23)
 
 - An ID is one uppercase letter followed by a positive integer: `A1`, `B14`,
   `C3`. The letter is the ring. `A` is the core.
@@ -51,9 +51,10 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
   node is moved or reverted. `dte next <ring>` gives the next free number.
 - The ID appears in the frontmatter `id:` field and is the file name:
   `decisions/<ring>/<ID>.md`.
-- A node **moved** to another ring receives a new ID in the destination ring.
-  The old ID is kept in `aliases:` and continues to resolve. Tools warn on
-  alias use so citations can be updated at leisure (see section 7).
+- There are no aliases. A node **moved** to another ring becomes a new node
+  with a new ID there; the old node stays as a file, `superseded` by the
+  new one, and every citation and child is rewritten in the same change
+  (see section 7). A node file is never renamed or deleted.
 
 ## 4. Node format (dte:B1, dte:B7)
 
@@ -69,7 +70,6 @@ parents: [A1, A2]         # required unless ring A; each must be shallower
 supersedes: []            # nodes this one replaces (they become superseded)
 superseded_by:            # set when status is superseded
 conflicts_with: []        # active nodes this one contradicts (resolved by ring)
-aliases: []               # former ids after a move
 made_by: ai               # human | ai | joint
 by: Claude Fable 5.1      # person or model, free text
 date: 2026-09-02
@@ -120,7 +120,8 @@ Optional. One line per event: created, ratified, moved, superseded.
 - Citing a node implicitly cites its whole ancestry. Cite the *most specific*
   node that explains the artifact. Citing an `A` node directly is allowed and
   means "this exists straight from the core goal".
-- Citing an unknown ID is an error. Citing an alias is a warning.
+- Citing an unknown ID is an error. Citing a superseded or reverted node is
+  a warning: the artifact was built under a decision that no longer stands.
 - Nodes do not use citation tokens for lineage; they use `parents:`.
 
 ## 6. Rules
@@ -130,8 +131,9 @@ Optional. One line per event: created, ratified, moved, superseded.
 - **R2 (dte:B4)** Two active nodes that contradict each other are resolved by
   ring: shallower wins. Two contradicting nodes in the *same* ring are an
   error; resolve by superseding one or moving one.
-- **R3 (dte:B5)** Node files are never deleted. Superseding or reverting
-  changes `status`; the ring is preserved as history.
+- **R3 (dte:B5, dte:B23)** Node files are never deleted or renamed.
+  Superseding or reverting changes `status`; the ring is preserved as
+  history. With git present the tool errors on a deleted or renamed node.
 - **R4 (dte:B5)** An active node whose parent is superseded or reverted is an
   **orphan**. Orphans are errors: re-parent, supersede, or revert them.
   This is how A1 is enforced: reverting a node forces its blast radius to be
@@ -163,18 +165,24 @@ re-parent it to NEW (or to something else) or retire it.
 **Revert.** Set `status: reverted`. Same orphan discipline as supersede, with
 no replacement to re-parent to.
 
-**Move (promote or demote).** Moving changes precedence (dte:A1, dte:B2).
-1. `dte next <destination ring>` gives the new ID.
-2. Rename the file, update `id:`, add the old ID to `aliases:`, append a
-   History line.
-3. Parents must still be strictly shallower. If you promoted past a parent,
-   re-parent to that parent's parents or higher.
-4. Children must still be strictly deeper. If you demoted below a child, move
-   or re-parent the child.
-5. Existing citations keep resolving through the alias. Update them when
-   convenient.
-6. Run `dte conflicts`: promotion means this node now wins contradictions it
-   previously lost, and vice versa.
+**Move (promote or demote).** Moving changes precedence (dte:A1, dte:B23).
+A move is a supersession with the same text at a different ring. Use
+`dte move <ID> <ring> --by <name> [--parents ...] [--authorized-by <human>]`,
+which does all of the following in one run (dte:C9):
+1. Refuses if a child would not be strictly deeper than the new ring: move
+   or re-parent the child first. Refuses a human-held node without
+   `--authorized-by`.
+2. Allocates the new ID and writes the new node with the old body,
+   `supersedes: [OLD]`, and `ratified_by` cleared, because precedence
+   changed.
+3. Keeps the old parents that are still strictly shallower, or takes
+   `--parents`. Every dropped parent is named: its blast radius shrank.
+4. Marks the old node `superseded` by the new ID. The file stays.
+5. Rewrites `dte:OLD` in every artifact and `OLD` in every child's
+   `parents`.
+Then run `dte blast` on each dropped parent, and `dte conflicts` if the node
+has declared contradictions: promotion means it now wins ones it lost.
+Never `git mv` a node file; validation rejects renames.
 
 **Ratify.** A human sets `ratified_by:` on an AI or joint node, and flips
 `proposed` to `active` if applicable. A ratified node is human-held from
@@ -214,7 +222,7 @@ field must name a person.
 
 For node X:
 
-1. **Descendants**: every node with X (or an alias of X) in `parents`,
+1. **Descendants**: every node with X in `parents`,
    transitively. Grouped by ring.
 2. **Artifacts**: every file and line citing X or any descendant.
 3. **Formerly superseded**: every node X supersedes. If X is reverted, those
@@ -290,7 +298,7 @@ the same depth to be useful.
 A conforming tool is a single file with no dependencies beyond the language
 runtime, and implements at least: `validate` (with `--as`), `tree`, `blast`,
 `trace`, `conflicts`, `coverage`, `next`, `inbox`, `place`, `authority`,
-`scope`.
+`scope`, `move`.
 Every output that names a node prints `ID title` unless summaries are off.
 The reference implementation is `tools/dte.py`. Exit code is non-zero when
 `validate` finds errors.

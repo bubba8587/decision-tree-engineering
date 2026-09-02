@@ -10,6 +10,7 @@ One file, standard library only, Python 3.8+. Copy it into any project.
     python dte.py conflicts              declared contradictions and who wins
     python dte.py coverage               artifacts with no citation
     python dte.py next <ring>            next free id in a ring
+    python dte.py move <ID> <ring> --by NAME [--parents A1] [--authorized-by NAME]
     python dte.py scope                  advisory: no reach, too broad, skipped rings
     python dte.py inbox                  decisions waiting to be placed
     python dte.py place <slug> <ring> --by NAME [--parents A1,B2]
@@ -28,11 +29,11 @@ import subprocess
 import sys
 from collections import defaultdict
 
-ID_RE = re.compile(r"^([A-Z])(\d+)$")   # dte:B2
+ID_RE = re.compile(r"^([A-Z])(\d+)$")   # dte:B23
 CITE_RE = re.compile(r"\bdte:([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)")
 STATUSES = {"proposed", "active", "superseded", "reverted"}
 MADE_BY = {"human", "ai", "joint"}
-LIST_FIELDS = {"parents", "supersedes", "conflicts_with", "aliases"}
+LIST_FIELDS = {"parents", "supersedes", "conflicts_with"}
 # No depends_on or structural fields: that axis belongs to the graph.  dte:B9
 KNOWN_FIELDS = LIST_FIELDS | {
     "id", "title", "status", "superseded_by", "made_by", "by", "date",
@@ -238,7 +239,6 @@ class Tree:
         self.decisions_dir = os.path.abspath(decisions_dir)
         self.inbox_dir = os.path.join(self.decisions_dir, INBOX_DIR)
         self.nodes = {}
-        self.aliases = {}
         self.inbox = []
         self.errors = []
         self.warnings = []
@@ -265,14 +265,6 @@ class Tree:
                 if not fn.endswith(".md") or fn.upper() == "README.MD":
                     continue
                 self._load_node(os.path.join(dirpath, fn))
-        for node in self.nodes.values():
-            for a in node.aliases:
-                if a in self.nodes:
-                    self.errors.append("%s: alias %s collides with a live id" % (node.id, a))
-                elif a in self.aliases:
-                    self.errors.append("%s: alias %s also claimed by %s" % (node.id, a, self.aliases[a]))
-                else:
-                    self.aliases[a] = node.id
         for node in self.nodes.values():
             for p in node.parents:
                 r = self.resolve(p)
@@ -321,9 +313,8 @@ class Tree:
         return os.path.relpath(path, self.root).replace(os.sep, "/")
 
     def resolve(self, i):
-        if i in self.nodes:
-            return i
-        return self.aliases.get(i)
+        """No aliases: an id resolves to itself or to nothing.  dte:B23"""
+        return i if i in self.nodes else None
 
     def ordered(self, ids=None):
         return sorted(ids if ids is not None else self.nodes, key=id_key)
@@ -367,8 +358,6 @@ class Tree:
                 if pid is None:
                     E.append("%s: parent %s does not exist" % (i, p))
                     continue
-                if pid != p:
-                    W.append("%s: parent %s is an alias of %s; update it" % (i, p, pid))
                 parent = self.nodes[pid]
                 if ring_depth(parent.ring) >= ring_depth(node.ring):
                     E.append("%s: parent %s is not in a shallower ring" % (i, pid))
@@ -407,9 +396,6 @@ class Tree:
                 if node.status in ("superseded", "reverted"):
                     E.append("%s: human-held node is %s without authorized_by naming a human"
                              % (i, node.status))
-                if node.aliases:
-                    E.append("%s: human-held node was moved (aliases %s) without authorized_by"
-                             % (i, ", ".join(node.aliases)))
             if node.in_effect and not self.children.get(i):
                 self._leaf_ids.add(i)
         # citations  dte:C3
@@ -417,14 +403,16 @@ class Tree:
         for rel, ln, cid, resolved in self.citations:
             if resolved is None:
                 E.append("%s:%d: citation to unknown id %s" % (rel, ln, cid))
-            elif resolved != cid:
-                W.append("%s:%d: citation %s is an alias of %s" % (rel, ln, cid, resolved))
             elif not self.nodes[resolved].in_effect:
                 W.append("%s:%d: cites %s which is %s" % (rel, ln, cid, self.nodes[resolved].status))
         cited = {r for _, _, _, r in self.citations if r}
         for i in sorted(self._leaf_ids, key=id_key):
             if i not in cited:
                 W.append("%s: in effect but has no children and no citing artifacts" % i)
+        for code, rel in self.retired_paths():   # dte:C10
+            what = "renamed" if code == "R" else "deleted"
+            E.append("%s: node file %s; nodes are never %s (use dte move, supersede, or revert)"
+                     % (rel, what, what))
         if as_ring:
             self._check_authority(as_ring)
         return not E
@@ -448,23 +436,47 @@ class Tree:
                 E.append("%s: human-held node changed without authorized_by (agent at ring %s)"
                          % (node.id, as_ring))
 
-    def changed_files(self):
-        """(set of changed relpaths, exact?)  dte:C6"""
+    def git_status(self):
+        """[(code, path, old_path)] from git, or None without git.  dte:C6"""
         try:
             out = subprocess.run(
                 ["git", "-C", self.root, "status", "--porcelain", "--untracked-files=all"],
                 capture_output=True, text=True, check=True).stdout
         except (OSError, subprocess.CalledProcessError):
-            return {self.rel(n.path) for n in self.nodes.values()}, False
-        changed = set()
+            return None
+        rows = []
         for line in out.splitlines():
             if len(line) < 4:
                 continue
-            path = line[3:]
+            xy, path, old = line[:2], line[3:], None
             if " -> " in path:
-                path = path.split(" -> ", 1)[1]
-            changed.add(path.strip('"').replace("\\", "/"))
-        return changed, True
+                old, path = path.split(" -> ", 1)
+                old = old.strip('"').replace("\\", "/")
+            path = path.strip('"').replace("\\", "/")
+            code = "R" if "R" in xy else ("D" if "D" in xy else xy.strip() or "M")
+            rows.append((code, path, old))
+        return rows
+
+    def changed_files(self):
+        """(set of changed relpaths, exact?)"""
+        rows = self.git_status()
+        if rows is None:
+            return {self.rel(n.path) for n in self.nodes.values()}, False
+        return {p for _, p, _ in rows}, True
+
+    def retired_paths(self):
+        """Node files git says were deleted or renamed, excluding the inbox.  dte:C10"""
+        rows = self.git_status()
+        if rows is None:
+            return []
+        dec = self.rel(self.decisions_dir) + "/"
+        inbox = dec + INBOX_DIR + "/"
+        out = []
+        for code, path, old in rows:
+            gone = old if code == "R" else (path if code == "D" else None)
+            if gone and gone.startswith(dec) and not gone.startswith(inbox) and gone.endswith(".md"):
+                out.append((code, gone))
+        return out
 
     def scope_findings(self):
         """Advisory scope checks.  dte:B21,C8"""
@@ -827,8 +839,8 @@ def cmd_coverage(tree, args):
 
 
 def next_id(tree, ring):
+    """Superseded and reverted nodes keep their files, so numbers are never reused.  dte:B23"""
     used = [n.number for n in tree.nodes.values() if n.ring == ring]
-    used += [int(ID_RE.match(a).group(2)) for a in tree.aliases if a.startswith(ring)]
     return "%s%d" % (ring, (max(used) + 1) if used else 1)
 
 
@@ -886,7 +898,6 @@ def cmd_place(tree, args):
         "supersedes: []",
         "superseded_by:",
         "conflicts_with: []",
-        "aliases: []",
         "made_by: %s" % item.made_by,
         "by: %s" % item.by,
         "date: %s" % (item.raw.get("date") or today),
@@ -907,6 +918,144 @@ def cmd_place(tree, args):
     os.remove(item.path)
     print('placed %s "%s" at %s' % (new_id, item.title, tree.rel(dest)))
     print("cite it as dte:%s and re-run validate" % new_id)
+    return 0
+
+
+def set_field(text, key, value):
+    """Replace or insert one frontmatter line by key."""
+    lines = text.split("\n")
+    end = lines.index("---", 1)
+    new = "%s: %s" % (key, value) if value != "" else "%s:" % key
+    for k in range(1, end):
+        if lines[k].split(":", 1)[0].strip() == key:
+            lines[k] = new
+            return "\n".join(lines)
+    lines.insert(end, new)
+    return "\n".join(lines)
+
+
+def read_text(path):
+    with open(path, encoding="utf-8", newline="") as fh:
+        return fh.read()
+
+
+def write_text(path, text):
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
+def cmd_move(tree, args):
+    """dte:C9"""
+    tree.validate()
+    old_id, ring = args.id, args.ring.upper()
+    if not re.match(r"^[A-Z]$", ring):
+        print("ring must be a single letter A-Z")
+        return 2
+    node = tree.nodes.get(old_id)
+    if node is None:
+        print("unknown id: %s" % old_id)
+        return 2
+    if not node.in_effect:
+        print("%s is %s; only in-effect nodes move" % (old_id, node.status))
+        return 2
+    if node.ring == ring:
+        print("%s is already at ring %s" % (old_id, ring))
+        return 2
+    if CONFIG["protect_human"] and node.human_held and not args.authorized_by:
+        print("%s is human-held; a move supersedes it and needs --authorized-by <human>  (B11)" % old_id)
+        return 2
+    if args.parents:
+        parents = [p.strip() for p in args.parents.split(",") if p.strip()]
+    else:
+        parents = [p for p in node.parents
+                   if p in tree.nodes and ring_depth(tree.nodes[p].ring) < ring_depth(ring)]
+    dropped = [p for p in node.parents if p not in parents]
+    if ring == "A" and parents:
+        print("ring A nodes cannot have parents")
+        return 2
+    if ring != "A" and not parents:
+        print("no parent of %s is shallower than ring %s; pass --parents" % (old_id, ring))
+        return 2
+    for p in parents:
+        if p not in tree.nodes:
+            print("parent %s does not exist" % p)
+            return 2
+        if ring_depth(tree.nodes[p].ring) >= ring_depth(ring):
+            print("parent %s is not shallower than ring %s" % (p, ring))
+            return 2
+    children = [c for c in tree.children.get(old_id, [])]
+    for c in children:
+        if ring_depth(tree.nodes[c].ring) <= ring_depth(ring):
+            print("child %s is at ring %s, not deeper than %s; move or re-parent it first"
+                  % (c, tree.nodes[c].ring, ring))
+            return 2
+    new_id = next_id(tree, ring)
+    today = datetime.date.today().isoformat()
+    # new node
+    text = read_text(node.path)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    text = set_field(text, "id", new_id)
+    text = set_field(text, "status", "active")
+    text = set_field(text, "parents", "[%s]" % ", ".join(parents))
+    text = set_field(text, "supersedes", "[%s]" % old_id)
+    text = set_field(text, "superseded_by", "")
+    text = set_field(text, "ratified_by", "")
+    text = set_field(text, "authorized_by", "")
+    body_note = "- %s moved from %s to ring %s as %s by %s%s.%s" % (
+        today, old_id, ring, new_id, args.by,
+        (" (dropped parents: %s)" % ", ".join(dropped)) if dropped else "",
+        "")
+    if "## History" in text:
+        text = text.rstrip("\n") + "\n" + body_note + "\n"
+    else:
+        text = text.rstrip("\n") + "\n\n## History\n\n" + body_note + "\n"
+    dest_dir = os.path.join(tree.decisions_dir, ring)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, new_id + ".md")
+    write_text(dest, text.replace("\n", nl))
+    # old node
+    old_text = read_text(node.path)
+    onl = "\r\n" if "\r\n" in old_text else "\n"
+    old_text = old_text.replace("\r\n", "\n")
+    old_text = set_field(old_text, "status", "superseded")
+    old_text = set_field(old_text, "superseded_by", new_id)
+    if args.authorized_by:
+        old_text = set_field(old_text, "authorized_by", args.authorized_by)
+    note = "- %s superseded by %s (moved to ring %s) by %s." % (today, new_id, ring, args.by)
+    if "## History" in old_text:
+        old_text = old_text.rstrip("\n") + "\n" + note + "\n"
+    else:
+        old_text = old_text.rstrip("\n") + "\n\n## History\n\n" + note + "\n"
+    write_text(node.path, old_text.replace("\n", onl))
+    # citations in artifacts
+    files = sorted({rel for rel, _, cid, _ in tree.citations if cid == old_id})
+    tok = re.compile(r"\bdte:([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)")
+
+    def swap(m):
+        ids = [new_id if x == old_id else x for x in re.split(r"\s*,\s*", m.group(1))]
+        return "dte:" + ",".join(ids)
+
+    for rel in files:
+        path = os.path.join(tree.root, rel)
+        write_text(path, tok.sub(swap, read_text(path)))
+    # children
+    for c in children:
+        cpath = tree.nodes[c].path
+        ctext = read_text(cpath)
+        cnl = "\r\n" if "\r\n" in ctext else "\n"
+        ctext = ctext.replace("\r\n", "\n")
+        ps = [new_id if p == old_id else p for p in tree.nodes[c].parents]
+        ctext = set_field(ctext, "parents", "[%s]" % ", ".join(ps))
+        write_text(cpath, ctext.replace("\n", cnl))
+    print('moved %s -> %s "%s" at %s' % (old_id, new_id, node.title, tree.rel(dest)))
+    print("  %s is now superseded by %s (file kept)" % (old_id, new_id))
+    print("  parents: %s" % ", ".join(parents))
+    if dropped:
+        print("  DROPPED parents: %s  (their blast radius shrank; run dte blast on each)" % ", ".join(dropped))
+    print("  rewrote citations in %d file(s): %s" % (len(files), ", ".join(files) or "none"))
+    print("  re-parented %d child(ren): %s" % (len(children), ", ".join(children) or "none"))
+    print("  precedence changed: run dte conflicts if %s has declared contradictions" % new_id)
     return 0
 
 
@@ -948,6 +1097,13 @@ def main(argv=None):
     p.add_argument("ring")
     p.add_argument("--by", required=True, help="who is placing it")
     p.add_argument("--parents", default=None, help="comma-separated parent ids")
+    m = sub.add_parser("move")
+    m.add_argument("id")
+    m.add_argument("ring")
+    m.add_argument("--by", required=True, help="who is moving it")
+    m.add_argument("--parents", default=None, help="comma-separated parent ids")
+    m.add_argument("--authorized-by", dest="authorized_by", default=None,
+                   help="human authorising the move of a human-held node")
     a = sub.add_parser("authority")
     a.add_argument("ring", nargs="?", default=None)
     args = ap.parse_args(argv)
@@ -959,7 +1115,7 @@ def main(argv=None):
         "validate": cmd_validate, "tree": cmd_tree, "blast": cmd_blast,
         "trace": cmd_trace, "conflicts": cmd_conflicts, "coverage": cmd_coverage,
         "next": cmd_next, "scope": cmd_scope, "inbox": cmd_inbox, "place": cmd_place,
-        "authority": cmd_authority,
+        "authority": cmd_authority, "move": cmd_move,
     }[args.cmd](tree, args)
 
 
