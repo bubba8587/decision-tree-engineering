@@ -1,0 +1,4 @@
+# Globs the dte scanner skips (in addition to .git and the decisions dir). dte:C3
+*.png
+*.jpg
+*.lock

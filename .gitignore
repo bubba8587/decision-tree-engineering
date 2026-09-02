@@ -1,0 +1,4 @@
+# dte:B6
+__pycache__/
+*.pyc
+.pytest_cache/
