@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B5,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -42,6 +42,8 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
   authority places it in a ring (dte:B14).
 - **Summary**: the node's `title`, which always accompanies its ID when a
   model refers to it (dte:A5, dte:B16).
+- **Ledger**: `decisions/RETIRED`, one line per retired node. Burns the
+  number for ever and records who retired it (dte:B24, dte:C11).
 
 ## 3. Identity and rings (dte:B23)
 
@@ -54,7 +56,8 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
 - There are no aliases. A node **moved** to another ring becomes a new node
   with a new ID there; the old node stays as a file, `superseded` by the
   new one, and every citation and child is rewritten in the same change
-  (see section 7). A node file is never renamed or deleted.
+  (see section 7). The old file is deleted or kept per `retire` in
+  `dte.cfg`; either way the ledger records it and the number is burned.
 
 ## 4. Node format (dte:B1, dte:B7)
 
@@ -131,10 +134,12 @@ Optional. One line per event: created, ratified, moved, superseded.
 - **R2 (dte:B4)** Two active nodes that contradict each other are resolved by
   ring: shallower wins. Two contradicting nodes in the *same* ring are an
   error; resolve by superseding one or moving one.
-- **R3 (dte:B5, dte:B23)** Node files are never deleted or renamed.
-  Superseding or reverting changes `status`; the ring is preserved as
-  history. With git present the tool errors on a deleted or renamed node.
-- **R4 (dte:B5)** An active node whose parent is superseded or reverted is an
+- **R3 (dte:B24, dte:C11)** A node is retired only through the ledger.
+  In delete mode the file is removed and git keeps the text; in keep mode
+  the file stays with `status` set. A deleted node file with no ledger
+  line, or a renamed node file, is an error. Retired numbers are never
+  reissued.
+- **R4 (dte:B24)** An in-effect node whose parent is retired is an
   **orphan**. Orphans are errors: re-parent, supersede, or revert them.
   This is how A1 is enforced: reverting a node forces its blast radius to be
   dealt with, not forgotten.
@@ -157,13 +162,17 @@ Optional. One line per event: created, ratified, moved, superseded.
 **Add a decision.** `dte next <ring>` for the ID. Write the node. Set parents.
 Cite it from the artifacts it produces. Run `dte validate`.
 
-**Supersede.** Create the new node with `supersedes: [OLD]`. Set the old node
-to `status: superseded` and `superseded_by: NEW`. Run `dte blast OLD` before
-you start and again after: every descendant of OLD is now an orphan until you
-re-parent it to NEW (or to something else) or retire it.
+**Supersede.** Write the new node. Run `dte blast OLD`. Then
+`dte retire OLD --by <name> --superseded-by NEW [--authorized-by <human>]`:
+the tool adds OLD to NEW's `supersedes`, rewrites every citation and child
+of OLD to NEW and prints them for review (they were built under OLD),
+writes the ledger line, and deletes or keeps the file per `retire`.
 
-**Revert.** Set `status: reverted`. Same orphan discipline as supersede, with
-no replacement to re-parent to.
+**Revert.** `dte retire OLD --by <name> [--authorized-by <human>]` with no
+successor. Citations and children of OLD are left as they are and now fail
+validation with a hint: that list is the blast radius of the revert, and
+each item is re-pointed or retired by hand. Nodes OLD had superseded are
+printed as candidates to return.
 
 **Move (promote or demote).** Moving changes precedence (dte:A1, dte:B23).
 A move is a supersession with the same text at a different ring. Use
@@ -177,12 +186,14 @@ which does all of the following in one run (dte:C9):
    changed.
 3. Keeps the old parents that are still strictly shallower, or takes
    `--parents`. Every dropped parent is named: its blast radius shrank.
-4. Marks the old node `superseded` by the new ID. The file stays.
+4. Retires the old node through the ledger: deleted in delete mode, kept
+   with `status: superseded` in keep mode.
 5. Rewrites `dte:OLD` in every artifact and `OLD` in every child's
    `parents`.
 Then run `dte blast` on each dropped parent, and `dte conflicts` if the node
 has declared contradictions: promotion means it now wins ones it lost.
-Never `git mv` a node file; validation rejects renames.
+Never `git mv` or hand-delete a node file; validation rejects renames and
+ledger-less deletions.
 
 **Ratify.** A human sets `ratified_by:` on an AI or joint node, and flips
 `proposed` to `active` if applicable. A ratified node is human-held from
@@ -272,6 +283,7 @@ may decide at any ring; a human-made node is valid anywhere.
 | `docs`          | `*.md, docs/*` | describing artifacts; not counted as reach (C8) |
 | `broad_fraction`| `0.3`   | share of nodes or artifacts that makes a node broad (C8) |
 | `broad_min`     | `5`     | minimum count before the share is considered (C8) |
+| `retire`        | `delete`| `delete` removes retired files (needs git); `keep` sets status (B24) |
 
 ## 12. Scope checks (dte:B21, dte:C8)
 
@@ -298,7 +310,7 @@ the same depth to be useful.
 A conforming tool is a single file with no dependencies beyond the language
 runtime, and implements at least: `validate` (with `--as`), `tree`, `blast`,
 `trace`, `conflicts`, `coverage`, `next`, `inbox`, `place`, `authority`,
-`scope`, `move`.
+`scope`, `move`, `retire`.
 Every output that names a node prints `ID title` unless summaries are off.
 The reference implementation is `tools/dte.py`. Exit code is non-zero when
 `validate` finds errors.

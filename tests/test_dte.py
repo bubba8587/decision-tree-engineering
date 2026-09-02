@@ -1,4 +1,4 @@
-"""Tests for tools/dte.py.  dte:B6,C2,B4,B5,B11,B14,B15
+"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11
 
 Run: python -m unittest discover -s tests
 """
@@ -105,6 +105,21 @@ class Base(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def _git(self, *a):
+        return subprocess.run(["git", "-C", self.root] + list(a), capture_output=True, text=True)
+
+    def _init_repo(self):
+        if self._git("init", "-q").returncode != 0:
+            self.skipTest("git not available")
+        self._git("config", "user.email", "t@example.com")
+        self._git("config", "user.name", "t")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "base")
+
+    def _read(self, rel):
+        with open(os.path.join(self.root, rel), encoding="utf-8") as fh:
+            return fh.read()
+
 
 class TestValidate(Base):
     def test_clean_tree_passes(self):
@@ -127,7 +142,7 @@ class TestValidate(Base):
         self.assertIn("not in a shallower ring", out)
 
     def test_orphan_after_revert(self):
-        # dte:B5  reverting B1 must surface C1
+        # dte:B24  reverting B1 must surface C1
         write_node(self.root, id="B1", parents="A1", status="reverted", made_by="ai")
         code, out = run(self.root, "validate")
         self.assertEqual(code, 1)
@@ -227,17 +242,6 @@ class TestInbox(Base):
 class TestAuthority(Base):
     """dte:B13, dte:B15, dte:C6"""
 
-    def _git(self, *a):
-        return subprocess.run(["git", "-C", self.root] + list(a), capture_output=True, text=True)
-
-    def _init_repo(self):
-        if self._git("init", "-q").returncode != 0:
-            self.skipTest("git not available")
-        self._git("config", "user.email", "t@example.com")
-        self._git("config", "user.name", "t")
-        self._git("add", "-A")
-        self._git("commit", "-q", "-m", "base")
-
     def test_authority_map(self):
         write_file(self.root, "dte.cfg", "authority = A:human, B:orchestrator, C+:subagent\n")
         code, out = run(self.root, "authority", "D")
@@ -265,7 +269,7 @@ class TestAuthority(Base):
         self.assertEqual(code, 0, out)
         code, out = run(self.root, "validate", "--as", "C")
         self.assertEqual(code, 1)
-        self.assertIn("B3: changed by an agent at ring C but lives at ring B", out)
+        self.assertIn("B3: retired by an agent at ring C but lived at ring B", out)
 
     def test_authorized_change_above_ring_passes(self):
         self._init_repo()
@@ -281,17 +285,8 @@ class TestAuthority(Base):
         self.assertIn("Nodes changed in this working tree", out)
         self.assertIn("C2 a fresh node", out)
 
-    def test_deleted_node_file_is_error(self):
-        # dte:C10  a leaf with no children and no citations
-        write_node(self.root, id="C2", parents="B1", made_by="ai")
-        self._init_repo()
-        os.remove(os.path.join(self.root, "decisions", "C", "C2.md"))
-        code, out = run(self.root, "validate")
-        self.assertEqual(code, 1)
-        self.assertIn("decisions/C/C2.md: node file deleted", out)
-
     def test_renamed_node_file_is_error(self):
-        # dte:C10  git mv is not a move
+        # dte:C11  git mv is not a move
         self._init_repo()
         self._git("mv", "decisions/B/B2.md", "decisions/B/B9.md")
         code, out = run(self.root, "validate")
@@ -365,22 +360,21 @@ class TestScope(Base):
 
 
 class TestMove(Base):
-    """dte:B23, dte:C9"""
+    """dte:B23, dte:C9, dte:B24"""
 
-    def _read(self, rel):
-        with open(os.path.join(self.root, rel), encoding="utf-8") as fh:
-            return fh.read()
-
-    def test_move_supersedes_and_rewrites_everything(self):
+    def test_move_deletes_old_and_rewrites_everything(self):
         write_node(self.root, id="D1", parents="C1", made_by="ai")
+        self._init_repo()
         code, out = run(self.root, "move", "C1", "B", "--by", "owner", "--parents", "A1",
                         "--authorized-by", "owner")  # C1 is human-made in the fixture
         self.assertEqual(code, 0, out)
         self.assertIn("moved C1 -> B3", out)
         self.assertIn("DROPPED parents: B1", out)
-        old = self._read("decisions/C/C1.md")
-        self.assertIn("status: superseded", old)
-        self.assertIn("superseded_by: B3", old)
+        self.assertIn("file deleted, ledger line written", out)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "decisions", "C", "C1.md")))
+        ledger = self._read("decisions/RETIRED")
+        self.assertIn("C1\t", ledger)
+        self.assertIn("\tmoved\tB3\towner\towner\t", ledger)
         new = self._read("decisions/B/B3.md")
         self.assertIn("id: B3", new)
         self.assertIn("parents: [A1]", new)
@@ -391,10 +385,31 @@ class TestMove(Base):
         self.assertIn("parents: [B3]", self._read("decisions/D/D1.md"))
         code, out = run(self.root, "validate")
         self.assertEqual(code, 0, out)
-        self.assertEqual(run(self.root, "next", "C")[1].strip(), "C2")
+        self.assertEqual(run(self.root, "next", "C")[1].strip(), "C2")  # C1 burned
+
+    def test_move_in_keep_mode_keeps_file_with_status(self):
+        write_file(self.root, "dte.cfg", "retire = keep\n")
+        self._init_repo()
+        code, out = run(self.root, "move", "C1", "B", "--by", "owner", "--parents", "A1",
+                        "--authorized-by", "owner")
+        self.assertEqual(code, 0, out)
+        old = self._read("decisions/C/C1.md")
+        self.assertIn("status: superseded", old)
+        self.assertIn("superseded_by: B3", old)
+        self.assertIn("C1\t", self._read("decisions/RETIRED"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+
+    def test_delete_mode_without_git_falls_back_to_keep(self):
+        code, out = run(self.root, "move", "C1", "B", "--by", "owner", "--parents", "A1",
+                        "--authorized-by", "owner")
+        self.assertEqual(code, 0, out)
+        self.assertIn("needs git", out)
+        self.assertTrue(os.path.exists(os.path.join(self.root, "decisions", "C", "C1.md")))
 
     def test_move_keeps_parents_that_are_still_shallower(self):
         write_node(self.root, id="C2", parents="A1, B1", made_by="ai")
+        self._init_repo()
         code, out = run(self.root, "move", "C2", "B", "--by", "owner")
         self.assertEqual(code, 0, out)
         self.assertIn("parents: A1", out)
@@ -404,17 +419,110 @@ class TestMove(Base):
         code, out = run(self.root, "move", "B2", "C", "--by", "agent", "--parents", "B1")
         self.assertEqual(code, 2)
         self.assertIn("human-held", out)
+        self._init_repo()
         code, out = run(self.root, "move", "B2", "C", "--by", "agent", "--parents", "B1",
                         "--authorized-by", "owner")
         self.assertEqual(code, 0, out)
-        self.assertIn("authorized_by: owner", self._read("decisions/B/B2.md"))
-        code, out = run(self.root, "validate")
+        self.assertIn("B2\t", self._read("decisions/RETIRED"))
+        self.assertIn("\towner\t", self._read("decisions/RETIRED"))
+        code, out = run(self.root, "validate", "--as", "C")
         self.assertEqual(code, 0, out)
 
     def test_move_refuses_when_child_would_not_be_deeper(self):
         code, out = run(self.root, "move", "B1", "C", "--by", "agent", "--parents", "B2")
         self.assertEqual(code, 2)
         self.assertIn("child C1", out)
+
+
+class TestRetire(Base):
+    """dte:B24, dte:C11"""
+
+    def test_supersede_rewrites_and_deletes(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        self._init_repo()
+        code, out = run(self.root, "retire", "B1", "--by", "agent", "--superseded-by", "B3")
+        self.assertEqual(code, 0, out)
+        self.assertIn("REVIEW", out)
+        self.assertIn("C1 C1 title", out)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "decisions", "B", "B1.md")))
+        self.assertIn("supersedes: [B1]", self._read("decisions/B/B3.md"))
+        self.assertIn("parents: [B3]", self._read("decisions/C/C1.md"))
+        self.assertIn("B1\t", self._read("decisions/RETIRED"))
+        self.assertIn("\tsuperseded\tB3\t", self._read("decisions/RETIRED"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(run(self.root, "next", "B")[1].strip(), "B4")
+
+    def test_revert_leaves_references_failing_with_hint(self):
+        self._init_repo()
+        code, out = run(self.root, "retire", "B1", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        self.assertIn("blast radius of the revert", out)
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 1)
+        self.assertIn("C1: ORPHAN, parent B1 was retired on", out)
+        self.assertIn("reverted", out)
+        self.assertIn("git log --all -- decisions/B/B1.md", out)
+
+    def test_citing_a_retired_id_is_an_error_with_hint(self):
+        self._init_repo()
+        run(self.root, "retire", "B1", "--by", "agent")
+        write_file(self.root, "src/z.py", "# %s\n" % ("dte" + ":B1"))
+        code, out = run(self.root, "validate")
+        self.assertIn("src/z.py:1: cites B1, which was retired", out)
+
+    def test_retire_human_held_needs_authorization(self):
+        self._init_repo()
+        code, out = run(self.root, "retire", "B2", "--by", "agent")
+        self.assertEqual(code, 2)
+        self.assertIn("human-held", out)
+        code, out = run(self.root, "retire", "B2", "--by", "agent", "--authorized-by", "owner")
+        self.assertEqual(code, 0, out)
+        self.assertIn("\towner\t", self._read("decisions/RETIRED"))
+
+    def test_manual_deletion_without_ledger_is_error(self):
+        write_node(self.root, id="C2", parents="B1", made_by="ai")
+        self._init_repo()
+        os.remove(os.path.join(self.root, "decisions", "C", "C2.md"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 1)
+        self.assertIn("deleted with no ledger line; use dte retire", out)
+
+    def test_deletion_in_keep_mode_is_error_even_with_ledger(self):
+        write_node(self.root, id="C2", parents="B1", made_by="ai")
+        self._init_repo()
+        run(self.root, "retire", "C2", "--by", "agent")   # delete mode: file gone, ledger written
+        write_file(self.root, "dte.cfg", "retire = keep\n")
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 1)
+        self.assertIn("retire = keep", out)
+
+    def test_agent_deleting_shallower_node_is_error(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        self._init_repo()
+        run(self.root, "retire", "B3", "--by", "agent")
+        code, out = run(self.root, "validate", "--as", "C")
+        self.assertEqual(code, 1)
+        self.assertIn("B3: retired by an agent at ring C but lived at ring B", out)
+
+    def test_agent_deleting_human_node_checked_against_head(self):
+        self._init_repo()
+        # bypass the command: write the ledger by hand and delete the human-made B2
+        write_file(self.root, "decisions/RETIRED", "B2\t2026-09-02\treverted\t-\tagent\t-\tB2 title\n")
+        os.remove(os.path.join(self.root, "decisions", "B", "B2.md"))
+        os.remove(os.path.join(self.root, "src", "b.py"))
+        code, out = run(self.root, "validate", "--as", "B")
+        self.assertEqual(code, 1)
+        self.assertIn("B2: human-held node deleted without authorized_by in the ledger", out)
+
+    def test_blast_lists_retired_predecessor(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        self._init_repo()
+        run(self.root, "retire", "B1", "--by", "agent", "--superseded-by", "B3")
+        code, out = run(self.root, "blast", "B3")
+        self.assertIn("candidates to return", out)
+        self.assertIn('B1 "B1 title"', out)
+        self.assertIn("git log --all", out)
 
 
 class TestQueries(Base):
@@ -451,11 +559,9 @@ class TestQueries(Base):
         self.assertIn("src/none.py", out)
 
     def test_next_never_reuses_retired_numbers(self):
-        # dte:B23  a superseded node keeps its file, so its number stays taken
-        write_node(self.root, id="B2", parents="A1", status="superseded", superseded_by="B3",
-                   authorized_by="owner")
-        write_node(self.root, id="B3", parents="A1", supersedes="B2")
-        self.assertEqual(run(self.root, "next", "B")[1].strip(), "B4")
+        # dte:B24  the ledger burns numbers even with the file gone
+        write_file(self.root, "decisions/RETIRED", "B7\t2026-09-02\treverted\t-\tx\t-\tgone\n")
+        self.assertEqual(run(self.root, "next", "B")[1].strip(), "B8")
         self.assertEqual(run(self.root, "next", "D")[1].strip(), "D1")
 
     def test_summaries_off_prints_bare_ids(self):

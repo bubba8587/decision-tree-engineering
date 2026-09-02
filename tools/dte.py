@@ -11,6 +11,7 @@ One file, standard library only, Python 3.8+. Copy it into any project.
     python dte.py coverage               artifacts with no citation
     python dte.py next <ring>            next free id in a ring
     python dte.py move <ID> <ring> --by NAME [--parents A1] [--authorized-by NAME]
+    python dte.py retire <ID> --by NAME [--superseded-by NEW] [--authorized-by NAME]
     python dte.py scope                  advisory: no reach, too broad, skipped rings
     python dte.py inbox                  decisions waiting to be placed
     python dte.py place <slug> <ring> --by NAME [--parents A1,B2]
@@ -18,7 +19,7 @@ One file, standard library only, Python 3.8+. Copy it into any project.
 
 Options: --root DIR (default: cwd)  --decisions DIR (default: ROOT/decisions)
 Config:  ROOT/dte.cfg, key = value lines (summaries, protect_human, authority,
-         docs, broad_fraction, broad_min)
+         docs, broad_fraction, broad_min, retire)
 """
 import argparse
 import datetime
@@ -43,9 +44,11 @@ INBOX_FIELDS = {"title", "proposed_ring", "ask", "made_by", "by", "date", "paren
 IN_EFFECT = {"proposed", "active"}
 TITLE_MAX = 100          # dte:B16
 INBOX_DIR = "inbox"      # dte:B14
+LEDGER = "RETIRED"       # dte:C11
 
 DEFAULTS = {"summaries": True, "protect_human": True, "authority": (),
-            "docs": ("*.md", "docs/*"), "broad_fraction": 0.3, "broad_min": 5}   # dte:C8
+            "docs": ("*.md", "docs/*"), "broad_fraction": 0.3, "broad_min": 5,   # dte:C8
+            "retire": "delete"}   # dte:B24
 CONFIG = dict(DEFAULTS)
 
 
@@ -72,6 +75,8 @@ def load_config(root):
                 cfg["broad_fraction"] = float(val)
             elif key == "broad_min":
                 cfg["broad_min"] = int(val)
+            elif key == "retire":
+                cfg["retire"] = "keep" if val.lower() == "keep" else "delete"
             elif key == "authority":
                 for item in val.split(","):
                     if ":" in item:
@@ -240,6 +245,7 @@ class Tree:
         self.inbox_dir = os.path.join(self.decisions_dir, INBOX_DIR)
         self.nodes = {}
         self.inbox = []
+        self.retired = {}          # id -> ledger row  dte:C11
         self.errors = []
         self.warnings = []
         self.children = defaultdict(list)
@@ -265,11 +271,56 @@ class Tree:
                 if not fn.endswith(".md") or fn.upper() == "README.MD":
                     continue
                 self._load_node(os.path.join(dirpath, fn))
+        self._load_ledger()
         for node in self.nodes.values():
             for p in node.parents:
                 r = self.resolve(p)
                 if r:
                     self.children[r].append(node.id)
+
+    # -- ledger  dte:C11
+    def ledger_path(self):
+        return os.path.join(self.decisions_dir, LEDGER)
+
+    def _load_ledger(self):
+        p = self.ledger_path()
+        if not os.path.exists(p):
+            return
+        with open(p, encoding="utf-8") as fh:
+            for n, line in enumerate(fh, 1):
+                line = line.rstrip("\n")
+                if not line.strip() or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 7 or not ID_RE.match(parts[0]):
+                    self.errors.append("%s:%d: bad ledger line" % (self.rel(p), n))
+                    continue
+                row = dict(zip(("id", "date", "action", "successor", "by", "authorized_by", "title"), parts))
+                for k in ("successor", "authorized_by"):
+                    if row[k] == "-":
+                        row[k] = ""
+                if row["id"] in self.retired:
+                    self.errors.append("%s:%d: %s retired twice" % (self.rel(p), n, row["id"]))
+                self.retired[row["id"]] = row
+
+    def append_ledger(self, id_, action, successor, by, authorized_by, title):
+        p = self.ledger_path()
+        new = not os.path.exists(p)
+        with open(p, "a", encoding="utf-8", newline="") as fh:
+            if new:
+                fh.write("# Retired decision ids. Never reissued. Text lives in git history.  dte:C11\n")
+                fh.write("# id\tdate\taction\tsuccessor\tby\tauthorized_by\ttitle\n")
+            fh.write("\t".join([id_, datetime.date.today().isoformat(), action, successor or "-",
+                                by, authorized_by or "-", title.replace("\t", " ")]) + "\n")
+
+    def retired_hint(self, i):
+        row = self.retired.get(i)
+        if not row:
+            return "does not exist"
+        s = "was retired on %s (%s%s)" % (row["date"], row["action"],
+                                         (" to " if row["action"] == "moved" else " by ") + row["successor"]
+                                         if row["successor"] else "")
+        return s + "; text: git log --all -- decisions/%s/%s.md" % (i[0], i)
 
     def _read(self, path):
         with open(path, encoding="utf-8") as fh:
@@ -356,18 +407,19 @@ class Tree:
             for p in node.parents:
                 pid = self.resolve(p)
                 if pid is None:
-                    E.append("%s: parent %s does not exist" % (i, p))
+                    E.append("%s: ORPHAN, parent %s %s; re-parent, supersede, or revert %s"
+                             % (i, p, self.retired_hint(p), i))
                     continue
                 parent = self.nodes[pid]
                 if ring_depth(parent.ring) >= ring_depth(node.ring):
                     E.append("%s: parent %s is not in a shallower ring" % (i, pid))
-                # R4 orphans  dte:B5
+                # R4 orphans  dte:B24
                 if node.in_effect and not parent.in_effect:
                     E.append("%s: ORPHAN, parent %s is %s (re-parent, supersede, or revert %s)"
                              % (i, pid, parent.status, i))
                 if node.in_effect and parent.status == "proposed":   # dte:C5
                     W.append("%s: parent %s is still proposed (needs ratification)" % (i, pid))
-            # supersession  dte:B5
+            # supersession  dte:B24
             if node.status == "superseded":
                 sb = self.resolve(str(node.superseded_by or ""))
                 if not sb:
@@ -379,7 +431,11 @@ class Tree:
             for s in node.supersedes:
                 sid = self.resolve(s)
                 if sid is None:
-                    E.append("%s: supersedes unknown %s" % (i, s))
+                    if s not in self.retired:
+                        E.append("%s: supersedes unknown %s" % (i, s))
+                    elif self.retired[s]["successor"] and self.retired[s]["successor"] != i:
+                        W.append("%s: supersedes %s but the ledger says %s went to %s"
+                                 % (i, s, s, self.retired[s]["successor"]))
                 elif self.nodes[sid].status != "superseded":
                     E.append("%s: supersedes %s but %s has status %s"
                              % (i, sid, sid, self.nodes[sid].status))
@@ -387,7 +443,7 @@ class Tree:
             for c in node.conflicts_with:
                 cid = self.resolve(c)
                 if cid is None:
-                    E.append("%s: conflicts_with unknown %s" % (i, c))
+                    E.append("%s: conflicts_with %s %s" % (i, c, self.retired_hint(c)))
                 elif self.nodes[cid].in_effect and node.in_effect \
                         and self.nodes[cid].ring == node.ring:
                     E.append("%s: same-ring contradiction with %s; supersede or move one" % (i, cid))
@@ -402,17 +458,26 @@ class Tree:
         self.scan()
         for rel, ln, cid, resolved in self.citations:
             if resolved is None:
-                E.append("%s:%d: citation to unknown id %s" % (rel, ln, cid))
+                if cid in self.retired:
+                    E.append("%s:%d: cites %s, which %s" % (rel, ln, cid, self.retired_hint(cid)))
+                else:
+                    E.append("%s:%d: citation to unknown id %s" % (rel, ln, cid))
             elif not self.nodes[resolved].in_effect:
                 W.append("%s:%d: cites %s which is %s" % (rel, ln, cid, self.nodes[resolved].status))
         cited = {r for _, _, _, r in self.citations if r}
         for i in sorted(self._leaf_ids, key=id_key):
             if i not in cited:
                 W.append("%s: in effect but has no children and no citing artifacts" % i)
-        for code, rel in self.retired_paths():   # dte:C10
-            what = "renamed" if code == "R" else "deleted"
-            E.append("%s: node file %s; nodes are never %s (use dte move, supersede, or revert)"
-                     % (rel, what, what))
+        for code, rel in self.retired_paths():   # dte:C11
+            gone_id = os.path.splitext(os.path.basename(rel))[0]
+            if code == "R":
+                E.append("%s: node file renamed; use dte move (a move is a new id plus retirement)" % rel)
+            elif gone_id not in self.retired:
+                E.append("%s: node file deleted with no ledger line; use dte retire" % rel)
+            elif CONFIG["retire"] == "keep":
+                E.append("%s: node file deleted but retire = keep; restore it with a status instead" % rel)
+            elif gone_id in self.nodes:
+                E.append("%s: deleted and retired, yet %s still exists as a node" % (rel, gone_id))
         if as_ring:
             self._check_authority(as_ring)
         return not E
@@ -435,6 +500,29 @@ class Tree:
             if CONFIG["protect_human"] and node.human_held and not node.authorized_by:
                 E.append("%s: human-held node changed without authorized_by (agent at ring %s)"
                          % (node.id, as_ring))
+        for code, rel in self.retired_paths():   # deleted this working tree  dte:C11
+            if code != "D":
+                continue
+            gone_id = os.path.splitext(os.path.basename(rel))[0]
+            row = self.retired.get(gone_id)
+            auth = row["authorized_by"] if row else ""
+            if ring_depth(gone_id[0]) < ring_depth(as_ring) and not auth:
+                E.append("%s: retired by an agent at ring %s but lived at ring %s; escalate to %s"
+                         % (gone_id, as_ring, gone_id[0], holder_of(gone_id[0], CONFIG)))
+            old = self.node_at_head(rel)
+            if old is not None and CONFIG["protect_human"] and old.human_held and not auth:
+                E.append("%s: human-held node deleted without authorized_by in the ledger (agent at ring %s)"
+                         % (gone_id, as_ring))
+
+    def node_at_head(self, rel):
+        """The node as committed at HEAD, or None."""
+        try:
+            out = subprocess.run(["git", "-C", self.root, "show", "HEAD:" + rel],
+                                 capture_output=True, text=True, check=True).stdout
+            data, body = parse_frontmatter(out)
+            return Node(os.path.join(self.root, rel), data, body)
+        except (OSError, subprocess.CalledProcessError, ValueError):
+            return None
 
     def git_status(self):
         """[(code, path, old_path)] from git, or None without git.  dte:C6"""
@@ -465,7 +553,7 @@ class Tree:
         return {p for _, p, _ in rows}, True
 
     def retired_paths(self):
-        """Node files git says were deleted or renamed, excluding the inbox.  dte:C10"""
+        """Node files git says were deleted or renamed, excluding the inbox.  dte:C11"""
         rows = self.git_status()
         if rows is None:
             return []
@@ -758,7 +846,12 @@ def cmd_blast(tree, args):
         print("\nCurrently superseded by %s (candidates to return if %s is reverted):" % (target, target))
         for s in node.supersedes:
             sid = tree.resolve(s)
-            print("  " + (tree.nodes[sid].label() if sid else s + " (unknown)"))
+            if sid:
+                print("  " + tree.nodes[sid].label())
+            elif s in tree.retired:
+                print('  %s "%s"  %s' % (s, tree.retired[s]["title"], tree.retired_hint(s)))
+            else:
+                print("  %s (unknown)" % s)
     rings = sorted(set(by_ring) | {node.ring})
     print("\nLayers touched: %s.  %d decisions, %d artifacts."
           % (", ".join(rings), len(affected), len(hits)))
@@ -841,6 +934,7 @@ def cmd_coverage(tree, args):
 def next_id(tree, ring):
     """Superseded and reverted nodes keep their files, so numbers are never reused.  dte:B23"""
     used = [n.number for n in tree.nodes.values() if n.ring == ring]
+    used += [int(ID_RE.match(i).group(2)) for i in tree.retired if i.startswith(ring)]
     return "%s%d" % (ring, (max(used) + 1) if used else 1)
 
 
@@ -944,6 +1038,116 @@ def write_text(path, text):
         fh.write(text)
 
 
+def append_history(text, note):
+    if "## History" in text:
+        return text.rstrip("\n") + "\n" + note + "\n"
+    return text.rstrip("\n") + "\n\n## History\n\n" + note + "\n"
+
+
+def retire_node(tree, node, action, successor, by, authorized_by, what):
+    """Ledger line, then delete the file (delete mode) or set status (keep mode).  dte:B24,C11"""
+    tree.append_ledger(node.id, action, successor, by, authorized_by, node.title)
+    mode = CONFIG["retire"]
+    if mode == "delete" and tree.git_status() is None:
+        print("  WARNING: retire = delete needs git for history; keeping the file instead")
+        mode = "keep"
+    if mode == "delete":
+        os.remove(node.path)
+        return "%s; file deleted, ledger line written (text in git history)" % what
+    text = read_text(node.path)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    text = set_field(text, "status", "superseded" if successor else "reverted")
+    text = set_field(text, "superseded_by", successor or "")
+    if authorized_by:
+        text = set_field(text, "authorized_by", authorized_by)
+    text = append_history(text, "- %s %s by %s." % (datetime.date.today().isoformat(), what, by))
+    write_text(node.path, text.replace("\n", nl))
+    return "%s; file kept with status (retire = keep), ledger line written" % what
+
+
+def rewrite_references(tree, old_id, new_id):
+    """dte:OLD -> dte:NEW in artifacts, OLD -> NEW in children's parents.  dte:C9"""
+    files = sorted({rel for rel, _, cid, _ in tree.citations if cid == old_id})
+    tok = re.compile(r"\bdte:([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)")
+
+    def swap(m):
+        ids = [new_id if x == old_id else x for x in re.split(r"\s*,\s*", m.group(1))]
+        return "dte:" + ",".join(ids)
+
+    for rel in files:
+        path = os.path.join(tree.root, rel)
+        write_text(path, tok.sub(swap, read_text(path)))
+    children = list(tree.children.get(old_id, []))
+    for c in children:
+        cpath = tree.nodes[c].path
+        ctext = read_text(cpath)
+        cnl = "\r\n" if "\r\n" in ctext else "\n"
+        ctext = ctext.replace("\r\n", "\n")
+        ps = [new_id if p == old_id else p for p in tree.nodes[c].parents]
+        ctext = set_field(ctext, "parents", "[%s]" % ", ".join(ps))
+        write_text(cpath, ctext.replace("\n", cnl))
+    return files, children
+
+
+def cmd_retire(tree, args):
+    """dte:C11"""
+    tree.validate()
+    old_id, new_id = args.id, args.superseded_by
+    node = tree.nodes.get(old_id)
+    if node is None:
+        print("unknown id: %s (%s)" % (old_id, tree.retired_hint(old_id)))
+        return 2
+    if not node.in_effect and not new_id:
+        new_id = str(node.superseded_by or "") or None
+    if new_id:
+        new = tree.nodes.get(new_id)
+        if new is None:
+            print("successor %s does not exist" % new_id)
+            return 2
+        if not new.in_effect:
+            print("successor %s is %s" % (new_id, new.status))
+            return 2
+    if CONFIG["protect_human"] and node.human_held and not args.authorized_by:
+        print("%s is human-held; retiring it needs --authorized-by <human>  (B11)" % old_id)
+        return 2
+    if node.in_effect:
+        action = "superseded" if new_id else "reverted"
+    else:
+        action = node.status
+    files = sorted({rel for rel, _, cid, _ in tree.citations if cid == old_id})
+    children = list(tree.children.get(old_id, []))
+    if new_id:
+        if old_id not in new.supersedes:
+            t = read_text(new.path)
+            nl = "\r\n" if "\r\n" in t else "\n"
+            t = t.replace("\r\n", "\n")
+            t = set_field(t, "supersedes", "[%s]" % ", ".join(new.supersedes + [old_id]))
+            write_text(new.path, t.replace("\n", nl))
+        rewrite_references(tree, old_id, new_id)
+    fate = retire_node(tree, node, action, new_id, args.by, args.authorized_by,
+                       ("superseded by %s" % new_id) if new_id else "reverted")
+    print('retired %s "%s"' % (old_id, node.title))
+    print("  " + fate)
+    if new_id:
+        print("  rewrote %d citing file(s) and %d child(ren) to %s. REVIEW each: they were built under %s."
+              % (len(files), len(children), new_id, old_id))
+        for f in files:
+            print("    " + f)
+        for c in children:
+            print("    %s" % tree.nodes[c].label())
+    else:
+        if files or children:
+            print("  these now fail validation until re-pointed or retired (blast radius of the revert):")
+            for f in files:
+                print("    " + f)
+            for c in children:
+                print("    %s" % tree.nodes[c].label())
+        if node.supersedes:
+            print("  %s had superseded: %s. Candidates to return." % (old_id, ", ".join(node.supersedes)))
+    return 0
+
+
 def cmd_move(tree, args):
     """dte:C9"""
     tree.validate()
@@ -1001,7 +1205,7 @@ def cmd_move(tree, args):
     text = set_field(text, "supersedes", "[%s]" % old_id)
     text = set_field(text, "superseded_by", "")
     text = set_field(text, "ratified_by", "")
-    text = set_field(text, "authorized_by", "")
+    text = set_field(text, "authorized_by", args.authorized_by or "")  # the human authorised this file too
     body_note = "- %s moved from %s to ring %s as %s by %s%s.%s" % (
         today, old_id, ring, new_id, args.by,
         (" (dropped parents: %s)" % ", ".join(dropped)) if dropped else "",
@@ -1015,41 +1219,11 @@ def cmd_move(tree, args):
     dest = os.path.join(dest_dir, new_id + ".md")
     write_text(dest, text.replace("\n", nl))
     # old node
-    old_text = read_text(node.path)
-    onl = "\r\n" if "\r\n" in old_text else "\n"
-    old_text = old_text.replace("\r\n", "\n")
-    old_text = set_field(old_text, "status", "superseded")
-    old_text = set_field(old_text, "superseded_by", new_id)
-    if args.authorized_by:
-        old_text = set_field(old_text, "authorized_by", args.authorized_by)
-    note = "- %s superseded by %s (moved to ring %s) by %s." % (today, new_id, ring, args.by)
-    if "## History" in old_text:
-        old_text = old_text.rstrip("\n") + "\n" + note + "\n"
-    else:
-        old_text = old_text.rstrip("\n") + "\n\n## History\n\n" + note + "\n"
-    write_text(node.path, old_text.replace("\n", onl))
-    # citations in artifacts
-    files = sorted({rel for rel, _, cid, _ in tree.citations if cid == old_id})
-    tok = re.compile(r"\bdte:([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)")
-
-    def swap(m):
-        ids = [new_id if x == old_id else x for x in re.split(r"\s*,\s*", m.group(1))]
-        return "dte:" + ",".join(ids)
-
-    for rel in files:
-        path = os.path.join(tree.root, rel)
-        write_text(path, tok.sub(swap, read_text(path)))
-    # children
-    for c in children:
-        cpath = tree.nodes[c].path
-        ctext = read_text(cpath)
-        cnl = "\r\n" if "\r\n" in ctext else "\n"
-        ctext = ctext.replace("\r\n", "\n")
-        ps = [new_id if p == old_id else p for p in tree.nodes[c].parents]
-        ctext = set_field(ctext, "parents", "[%s]" % ", ".join(ps))
-        write_text(cpath, ctext.replace("\n", cnl))
+    fate = retire_node(tree, node, "moved", new_id, args.by, args.authorized_by,
+                       "moved to ring %s as %s" % (ring, new_id))
+    files, children = rewrite_references(tree, old_id, new_id)
     print('moved %s -> %s "%s" at %s' % (old_id, new_id, node.title, tree.rel(dest)))
-    print("  %s is now superseded by %s (file kept)" % (old_id, new_id))
+    print("  %s %s" % (old_id, fate))
     print("  parents: %s" % ", ".join(parents))
     if dropped:
         print("  DROPPED parents: %s  (their blast radius shrank; run dte blast on each)" % ", ".join(dropped))
@@ -1104,6 +1278,12 @@ def main(argv=None):
     m.add_argument("--parents", default=None, help="comma-separated parent ids")
     m.add_argument("--authorized-by", dest="authorized_by", default=None,
                    help="human authorising the move of a human-held node")
+    r = sub.add_parser("retire")
+    r.add_argument("id")
+    r.add_argument("--by", required=True, help="who is retiring it")
+    r.add_argument("--superseded-by", dest="superseded_by", default=None, help="successor id")
+    r.add_argument("--authorized-by", dest="authorized_by", default=None,
+                   help="human authorising the retirement of a human-held node")
     a = sub.add_parser("authority")
     a.add_argument("ring", nargs="?", default=None)
     args = ap.parse_args(argv)
@@ -1115,7 +1295,7 @@ def main(argv=None):
         "validate": cmd_validate, "tree": cmd_tree, "blast": cmd_blast,
         "trace": cmd_trace, "conflicts": cmd_conflicts, "coverage": cmd_coverage,
         "next": cmd_next, "scope": cmd_scope, "inbox": cmd_inbox, "place": cmd_place,
-        "authority": cmd_authority, "move": cmd_move,
+        "authority": cmd_authority, "move": cmd_move, "retire": cmd_retire,
     }[args.cmd](tree, args)
 
 

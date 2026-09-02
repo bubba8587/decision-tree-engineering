@@ -1,0 +1,6 @@
+# Retired decision ids. Never reissued. Text lives in git history.  dte:C11
+# id	date	action	successor	by	authorized_by	title
+B5	2026-09-02	superseded	B24	Claude Fable 5.1	-	Nodes are never deleted; descendants of retired nodes are orphans and must be resolved
+C10	2026-09-02	superseded	C11	Claude Fable 5.1	-	A deleted or renamed node file is a validation error whenever git can see it; the inbox is exempt
+B2	2026-09-02	superseded	B23	Claude Fable 5.1	-	The ID letter is the ring; moves assign a new ID and keep the old as an alias
+C4	2026-09-02	superseded	B22	Claude Fable 5.1	-	Coverage is a report, not a gate

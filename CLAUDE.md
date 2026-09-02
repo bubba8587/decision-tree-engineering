@@ -38,8 +38,9 @@ permission is gone and the action becomes an inbox item instead.
    `python tools/dte.py blast <ID>` first and read the whole report.
    Everything listed is your responsibility to reconcile.
 3. If the node is human-held (made by a human, or ratified by one), you may
-   not supersede, revert, move, or reword it. Ask. A human must write
-   `authorized_by` on it before validate will pass (B11).
+   not supersede, revert, move, or reword it. Ask. A human's name must be
+   in `authorized_by`, on the node or in the ledger line, before validate
+   will pass (B11).
 
 ## While you work
 
@@ -58,10 +59,10 @@ permission is gone and the action becomes an inbox item instead.
     Write `decisions/inbox/<slug>.md` (SPEC section 7, Escalate) and ask
     the holder of that ring in chat, giving the title. It gets an ID only
     when someone with authority runs `dte place`.
-- Never delete or rename a decision file. Supersede or revert (SPEC
-  section 7). To move a node between rings use `python tools/dte.py move`,
-  which supersedes the old node and rewrites every reference; there are no
-  aliases (B23).
+- Never hand-delete or rename a decision file. Retire it with
+  `python tools/dte.py retire` (supersede or revert) or move it with
+  `python tools/dte.py move`; both write the ledger and rewrite references
+  (B24, B23). A deletion with no ledger line fails validation.
 - Never resolve a contradiction by editing the loser. Precedence is
   position. If the ring order gives the wrong answer, that is a move, and
   moves above your ring are not yours to make.
