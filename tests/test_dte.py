@@ -280,6 +280,50 @@ class TestAuthority(Base):
         self.assertIn("B2: human-held node changed without authorized_by", out)
 
 
+class TestScope(Base):
+    """dte:B21, dte:C8"""
+
+    def test_no_reach(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        write_file(self.root, "README.md", "dte:B3 described only\n")
+        code, out = run(self.root, "scope")
+        self.assertIn("NO REACH (1)", out)
+        self.assertIn("B3 B3 title", out)
+
+    def test_broad(self):
+        write_file(self.root, "dte.cfg", "broad_min = 2\nbroad_fraction = 0.5\n")
+        write_file(self.root, "src/c.py", "# dte:B1\n")
+        write_file(self.root, "src/d.py", "# dte:B1\n")
+        code, out = run(self.root, "scope")
+        self.assertIn("BROAD (1)", out)
+        self.assertIn("B1 B1 title", out)
+        self.assertIn("promote it, or split it", out)
+
+    def test_skipped_ring(self):
+        write_node(self.root, id="C2", parents="A1")
+        code, out = run(self.root, "scope")
+        self.assertIn("SKIPPED RING (1)", out)
+        self.assertIn("a ring B decision is missing, or C2 belongs at ring B", out)
+
+    def test_core_only_code(self):
+        write_file(self.root, "src/e.py", "# %s\n" % ("dte" + ":A1"))
+        code, out = run(self.root, "scope")
+        self.assertIn("CORE-ONLY CODE (1)", out)
+        self.assertIn("src/e.py:1", out)
+
+    def test_docs_do_not_count_as_reach(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        write_file(self.root, "notes/x.txt", "dte:B3\n")
+        write_file(self.root, "dte.cfg", "docs = notes/*\n")
+        code, out = run(self.root, "scope")
+        self.assertIn("NO REACH (1)", out)
+
+    def test_validate_mentions_findings(self):
+        write_node(self.root, id="C2", parents="A1")
+        code, out = run(self.root, "validate")
+        self.assertIn("scope findings (advisory)", out)
+
+
 class TestQueries(Base):
     def test_blast_lists_descendants_and_artifacts(self):
         # dte:C2

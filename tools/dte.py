@@ -10,12 +10,14 @@ One file, standard library only, Python 3.8+. Copy it into any project.
     python dte.py conflicts              declared contradictions and who wins
     python dte.py coverage               artifacts with no citation
     python dte.py next <ring>            next free id in a ring
+    python dte.py scope                  advisory: no reach, too broad, skipped rings
     python dte.py inbox                  decisions waiting to be placed
     python dte.py place <slug> <ring> --by NAME [--parents A1,B2]
     python dte.py authority [ring]       who holds each ring (whom to ask)
 
 Options: --root DIR (default: cwd)  --decisions DIR (default: ROOT/decisions)
-Config:  ROOT/dte.cfg, key = value lines (summaries, protect_human, authority)
+Config:  ROOT/dte.cfg, key = value lines (summaries, protect_human, authority,
+         docs, broad_fraction, broad_min)
 """
 import argparse
 import datetime
@@ -26,11 +28,12 @@ import subprocess
 import sys
 from collections import defaultdict
 
-ID_RE = re.compile(r"^([A-Z])(\d+)$")
+ID_RE = re.compile(r"^([A-Z])(\d+)$")   # dte:B2
 CITE_RE = re.compile(r"\bdte:([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)")
 STATUSES = {"proposed", "active", "superseded", "reverted"}
 MADE_BY = {"human", "ai", "joint"}
 LIST_FIELDS = {"parents", "supersedes", "conflicts_with", "aliases"}
+# No depends_on or structural fields: that axis belongs to the graph.  dte:B9
 KNOWN_FIELDS = LIST_FIELDS | {
     "id", "title", "status", "superseded_by", "made_by", "by", "date",
     "ratified_by", "confidence", "authorized_by",
@@ -40,7 +43,8 @@ IN_EFFECT = {"proposed", "active"}
 TITLE_MAX = 100          # dte:B16
 INBOX_DIR = "inbox"      # dte:B14
 
-DEFAULTS = {"summaries": True, "protect_human": True, "authority": ()}
+DEFAULTS = {"summaries": True, "protect_human": True, "authority": (),
+            "docs": ("*.md", "docs/*"), "broad_fraction": 0.3, "broad_min": 5}   # dte:C8
 CONFIG = dict(DEFAULTS)
 
 
@@ -61,6 +65,12 @@ def load_config(root):
             key, val = key.strip(), val.strip()
             if key in ("summaries", "protect_human"):
                 cfg[key] = val.lower() in ("on", "true", "yes", "1")
+            elif key == "docs":
+                cfg["docs"] = tuple(x.strip() for x in val.split(",") if x.strip())
+            elif key == "broad_fraction":
+                cfg["broad_fraction"] = float(val)
+            elif key == "broad_min":
+                cfg["broad_min"] = int(val)
             elif key == "authority":
                 for item in val.split(","):
                     if ":" in item:
@@ -456,6 +466,53 @@ class Tree:
             changed.add(path.strip('"').replace("\\", "/"))
         return changed, True
 
+    def scope_findings(self):
+        """Advisory scope checks.  dte:B21,C8"""
+        self.validate()
+        docs = list(CONFIG["docs"])
+        frac, minimum = CONFIG["broad_fraction"], CONFIG["broad_min"]
+        impl = defaultdict(set)
+        core_lines = []
+        for rel, ln, cid, r in self.citations:
+            if not r or self._ignored(rel, docs):
+                continue
+            impl[r].add(rel)
+            if self.nodes[r].ring == "A":
+                core_lines.append((rel, ln, r))
+        n_noncore = sum(1 for n in self.nodes.values() if n.ring != "A" and n.in_effect)
+        n_art = len(self.scanned_files)
+        F = []
+        for n in self.ordered_nodes():
+            if not n.in_effect:
+                continue
+            for p in n.parents:
+                pid = self.resolve(p)
+                if pid and ring_depth(n.ring) - ring_depth(self.nodes[pid].ring) > 1:
+                    between = chr(ord(n.ring) - 1)
+                    F.append(("skipped ring", n.id,
+                              "parent %s is at ring %s; a ring %s decision is missing, or %s belongs at ring %s"
+                              % (pid, self.nodes[pid].ring, between, n.id, between)))
+            if n.ring == "A":
+                continue
+            desc = self.descendants(n.id)
+            files = set()
+            for d in [n.id] + list(desc):
+                files |= impl.get(d, set())
+            if not desc and not files:
+                F.append(("no reach", n.id,
+                          "nothing exists because of it: no descendants, no implementing artifact; retire it, or cite it from what it governs"))
+                continue
+            d_share = len(desc) / n_noncore if n_noncore else 0.0
+            f_share = len(files) / n_art if n_art else 0.0
+            if (len(desc) >= minimum and d_share >= frac) or (len(files) >= minimum and f_share >= frac):
+                F.append(("broad", n.id,
+                          "%d descendants (%d%% of non-core) and %d implementing files (%d%% of artifacts); promote it, or split it into several decisions"
+                          % (len(desc), 100 * d_share, len(files), 100 * f_share)))
+        for rel, ln, r in core_lines:
+            F.append(("core-only code", "%s:%d" % (rel, ln),
+                      "cites core node %s directly; no rule-level decision explains this line, add one or cite something more specific" % r))
+        return F
+
     def unratified(self):
         return [n for n in self.ordered_nodes()
                 if n.made_by in ("ai", "joint") and not n.ratified_by and n.in_effect]
@@ -578,10 +635,34 @@ def print_changed_nodes(tree):
         print("  %s" % n.label())
 
 
+def cmd_scope(tree, args):
+    """dte:B21"""
+    F = tree.scope_findings()
+    if not F:
+        print("No scope findings.")
+        return 0
+    by_kind = defaultdict(list)
+    for kind, subject, msg in F:
+        by_kind[kind].append((subject, msg))
+    for kind in ("no reach", "broad", "skipped ring", "core-only code"):
+        if kind not in by_kind:
+            continue
+        print("%s (%d):" % (kind.upper(), len(by_kind[kind])))
+        for subject, msg in by_kind[kind]:
+            label = tree.nodes[subject].label() if subject in tree.nodes else subject
+            print("  %s\n    %s" % (label, msg))
+        print()
+    print("%d findings. Advisory: thresholds and docs globs are in dte.cfg." % len(F))
+    return 0
+
+
 def cmd_validate(tree, args):
     ok = tree.validate(as_ring=args.as_ring)
     report(tree)
     print_changed_nodes(tree)
+    F = tree.scope_findings()
+    if F:
+        print("\n%d scope findings (advisory): run dte scope" % len(F))
     n_cited = len({r for r, _, _, _ in tree.citations})
     print("\n%d nodes, %d pending, %d citations in %d/%d artifacts, %d errors, %d warnings"
           % (len(tree.nodes), len(tree.inbox), len(tree.citations), n_cited,
@@ -677,7 +758,7 @@ def cmd_trace(tree, args):
     rel = tree.rel(os.path.abspath(args.path)) if os.path.exists(args.path) else args.path
     cites = [(ln, cid, r) for f, ln, cid, r in tree.citations if f == rel]
     if not cites:
-        print("%s: no citations. Nobody has said why this exists.  (dte:A2)" % rel)
+        print("%s: no citations. Nobody has said why this exists.  (dte:B22)" % rel)
         return 1
     print("WHY %s EXISTS\n" % rel)
     seen = set()
@@ -731,7 +812,7 @@ def cmd_conflicts(tree, args):
 
 
 def cmd_coverage(tree, args):
-    """dte:C4"""
+    """dte:B22"""
     tree.scan()
     cited = {r for r, _, _, _ in tree.citations}
     missing = [f for f in tree.scanned_files if f not in cited]
@@ -860,6 +941,7 @@ def main(argv=None):
     sub.add_parser("conflicts")
     sub.add_parser("coverage")
     sub.add_parser("next").add_argument("ring")
+    sub.add_parser("scope")
     sub.add_parser("inbox")
     p = sub.add_parser("place")
     p.add_argument("slug")
@@ -876,7 +958,7 @@ def main(argv=None):
     return {
         "validate": cmd_validate, "tree": cmd_tree, "blast": cmd_blast,
         "trace": cmd_trace, "conflicts": cmd_conflicts, "coverage": cmd_coverage,
-        "next": cmd_next, "inbox": cmd_inbox, "place": cmd_place,
+        "next": cmd_next, "scope": cmd_scope, "inbox": cmd_inbox, "place": cmd_place,
         "authority": cmd_authority,
     }[args.cmd](tree, args)
 

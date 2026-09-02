@@ -1,4 +1,4 @@
-<!-- dte:B8,A3,A5,A6,B14,B15,B17,B18,B19,B20 -->
+<!-- dte:B8,B14,B15,B17,B18,B19,B20 -->
 # Working in this repo (and any DTE repo)
 
 This project uses Decision Tree Engineering. Read `SPEC.md` once. Then follow

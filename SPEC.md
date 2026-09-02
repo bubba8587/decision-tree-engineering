@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B2,B3,B4,B5,B7,B10,B11,B12,B13,B14,B15,B16 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B2,B3,B4,B5,B7,B10,B11,B12,B13,B14,B15,B16,B21 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -140,7 +140,7 @@ Optional. One line per event: created, ratified, moved, superseded.
   `active` without ratification so agents are not blocked, but tools surface
   every unratified AI node until a human sets `ratified_by`.
 - **R6 (dte:A2)** The goal is total coverage: every artifact cites at least one
-  node. Coverage below 100% is not an error (adoption is incremental, dte:C4)
+  node. Coverage below 100% is not an error (adoption is incremental, dte:B22)
   but it is always reported.
 - **R7 (dte:B11)** A human-held node that is superseded, reverted, or moved
   must carry `authorized_by` naming a human. Off with `protect_human = off`.
@@ -261,17 +261,41 @@ may decide at any ring; a human-made node is valid anywhere.
 | `summaries`     | `on`    | print `ID title`; `off` prints bare IDs (A5) |
 | `protect_human` | `on`    | enforce R7 (B11)                             |
 | `authority`     | none    | advisory ring-to-holder map (B13)            |
+| `docs`          | `*.md, docs/*` | describing artifacts; not counted as reach (C8) |
+| `broad_fraction`| `0.3`   | share of nodes or artifacts that makes a node broad (C8) |
+| `broad_min`     | `5`     | minimum count before the share is considered (C8) |
 
-## 12. Tooling contract (dte:B6)
+## 12. Scope checks (dte:B21, dte:C8)
+
+`dte scope` is advisory and never fails. It reports:
+
+- **no reach**: a non-core node with no descendants and no implementing
+  artifact. Describing documents (the `docs` globs) do not count. Retire
+  it, or cite it from what it governs.
+- **broad**: a non-core node whose descendants or implementing files are at
+  least `broad_fraction` of the whole, with at least `broad_min` of them.
+  Promote it, or split it into several decisions.
+- **skipped ring**: a parent more than one ring shallower. A decision in
+  the ring between is missing, or the node is at the wrong ring.
+- **core-only code**: an implementing artifact line that cites ring A. No
+  rule-level decision explains that line; add one, or cite something more
+  specific.
+
+The thresholds are guesses until calibrated on a large tree. Ring balance
+(equal depth everywhere) is deliberately not a check: not everything needs
+the same depth to be useful.
+
+## 13. Tooling contract (dte:B6)
 
 A conforming tool is a single file with no dependencies beyond the language
 runtime, and implements at least: `validate` (with `--as`), `tree`, `blast`,
-`trace`, `conflicts`, `coverage`, `next`, `inbox`, `place`, `authority`.
+`trace`, `conflicts`, `coverage`, `next`, `inbox`, `place`, `authority`,
+`scope`.
 Every output that names a node prints `ID title` unless summaries are off.
 The reference implementation is `tools/dte.py`. Exit code is non-zero when
 `validate` finds errors.
 
-## 13. Open questions (not yet decided)
+## 14. Open questions (not yet decided)
 
 - Whether a node may have a parent in a *deeper* ring for "supporting" links.
   Current answer: no; use Consequences prose.

@@ -1,8 +1,8 @@
-<!-- dte:A4,C4,B8 -->
+<!-- dte:A4,B22,B8 -->
 # Adopting DTE in an existing project
 
 Written with Solenoid NGC as the first target, but nothing here is specific
-to it. Adoption is incremental by design (A4, C4): coverage starts near zero
+to it. Adoption is incremental by design (A4, B22): coverage starts near zero
 and only goes up. Nothing fails until the tree itself is inconsistent.
 
 ## Day one (an hour)

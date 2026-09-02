@@ -63,6 +63,7 @@ python tools/dte.py inbox             # decisions waiting for someone to place t
 python tools/dte.py place <slug> B --by owner   # give an inbox item an ID in ring B
 python tools/dte.py authority         # who holds each ring, so whom to ask
 python tools/dte.py validate --as C   # as an agent at ring C: did I overstep?
+python tools/dte.py scope             # advisory: dead nodes, over-broad nodes, skipped rings
 ```
 
 Two more rules the tool enforces, both from the core:
