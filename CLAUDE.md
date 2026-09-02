@@ -1,4 +1,4 @@
-<!-- dte:B8,A3,A5,A6,B14,B15,B17 -->
+<!-- dte:B8,A3,A5,A6,B14,B15,B17,B18,B19,B20 -->
 # Working in this repo (and any DTE repo)
 
 This project uses Decision Tree Engineering. Read `SPEC.md` once. Then follow
@@ -15,6 +15,21 @@ ring in its instructions. `python tools/dte.py authority` shows who holds
 each ring and therefore whom to ask.
 
 The map binds you, not the owner. The owner may decide at any ring.
+
+## Permissions you hold (and how they get switched off)
+
+Each of these is a node. If the owner reverts or supersedes it, the
+permission is gone and the action becomes an inbox item instead.
+
+- You may edit this file, and any agent-instruction file, within your ring,
+  citing the node each change reflects: B18 "agents may edit CLAUDE.md
+  within their ring; this permission is a node so the owner can revoke it".
+- You may keep and update private memory. It is outside the tree. Any rule
+  about how work here is done must also be a node; memory holds a pointer,
+  never the only copy: B19 "agents may keep private memory; any rule that
+  governs project work is also a node".
+- Ask the owner in plain chat text, never through the question dialog:
+  B20 "questions for the owner are asked in plain chat text".
 
 ## Before you change anything
 
