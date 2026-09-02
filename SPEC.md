@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B26 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B26,B27 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -173,9 +173,10 @@ writes the ledger line, and deletes or keeps the file per `retire`.
 
 **Revert.** `dte retire OLD --by <name> [--authorized-by <human>]` with no
 successor. Citations and children of OLD are left as they are and now fail
-validation with a hint: that list is the blast radius of the revert, and
-each item is re-pointed or retired by hand. Nodes OLD had superseded are
-printed as candidates to return.
+validation with a hint: that list is the blast radius of the revert. Each
+orphaned child is fixed with `dte reparent <ID> --parents ... --by <name>`
+or retired; each citation is re-pointed with `dte cite` or removed. Nodes
+OLD had superseded are printed as candidates to return.
 
 **Move (promote or demote).** Moving changes precedence (dte:A1, dte:B23).
 A move is a supersession with the same text at a different ring. Use
@@ -263,8 +264,10 @@ cross-reference:
 
 ## 10. Authority and agents (dte:A6, dte:B13, dte:B15)
 
-Every agent has a ring. A spawning agent states it in the subagent's
-instructions ("you operate at ring C"). The agent:
+Every agent has a ring. A spawning agent puts the output of
+`dte brief <ring> [--under ID]` at the top of the subagent's instructions
+(dte:B27): the ring, the `DTE_RING` variable, whom to ask, the in-effect
+decisions above the ring that bind it, and the rules. The agent:
 
 - makes decisions at its ring or deeper, and cites them;
 - writes anything shallower, or of unclear ring, to the inbox and asks;
@@ -315,11 +318,13 @@ the same depth to be useful.
 
 A conforming tool is a single file with no dependencies beyond the language
 runtime, and implements (dte:B26): asking the tree with `show`, `find`,
-`tree`, `blast`, `trace`, `conflicts`, `coverage`, `scope`, `retired`,
-`authority`, `next`; changing it with `new`, `ratify`, `conflict`, `move`,
-`retire`, `inbox`, `place`; and `validate` (with `--as`, defaulting to
-`$DTE_RING`), `export` (JSON: nodes, citations, ledger, inbox; the join
-surface for structural tools, dte:C12), and `init` (scaffold, dte:C13).
+`tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`,
+`scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it
+with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `move`,
+`retire`, `inbox`, `place`; and `validate` (with `--as`, defaulting to `$DTE_RING`),
+`export` (JSON: nodes, citations, ledger, inbox; the join surface for
+structural tools, dte:C12), `init` (scaffold, dte:C13), and `hook`
+(pre-commit validate, dte:C14).
 Every output that names a node prints `ID title` unless summaries are off.
 The reference implementation is `tools/dte.py`. Exit code is non-zero when
 `validate` finds errors.

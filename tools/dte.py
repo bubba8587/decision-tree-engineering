@@ -6,7 +6,7 @@ One file, standard library only, Python 3.8+. Copy it into any project.
   ask the tree
     python dte.py show <ID>              one decision: lineage, children, citing lines, body
     python dte.py find <text>            search ids, titles, bodies, ledger, inbox
-    python dte.py tree [--files]         the whole tree, ring by ring
+    python dte.py tree [--files] [--under ID]   the whole tree, or one subtree
     python dte.py blast <ID>             what would changing this touch?
     python dte.py trace <path>           why does this artifact exist?
     python dte.py conflicts              declared contradictions and who wins
@@ -17,8 +17,11 @@ One file, standard library only, Python 3.8+. Copy it into any project.
     python dte.py next <ring>            next free id in a ring
   change the tree (frontmatter is never hand-edited)
     python dte.py new <ring> --title T --by NAME [--parents A1] [--made-by ai|human|joint]
-    python dte.py ratify <ID> --by HUMAN
+    python dte.py ratify <ID>... --by HUMAN
+    python dte.py cite <file> <ID,ID>    insert a citation in the file's comment syntax
+    python dte.py brief <ring> [--under ID]   the block to hand a subagent at that ring
     python dte.py conflict <A> <B>       declare a contradiction on both sides
+    python dte.py reparent <ID> --parents A1,B2 --by NAME   fix an orphan
     python dte.py move <ID> <ring> --by NAME [--parents A1] [--authorized-by NAME]
     python dte.py retire <ID> --by NAME [--superseded-by NEW] [--authorized-by NAME]
     python dte.py inbox / place <slug> <ring> --by NAME [--parents A1,B2]
@@ -26,6 +29,7 @@ One file, standard library only, Python 3.8+. Copy it into any project.
     python dte.py validate [--as RING]   consistency; exit 1 on errors ($DTE_RING is the default ring)
     python dte.py export [--out FILE]    JSON of nodes, citations, ledger, inbox
     python dte.py init                   scaffold decisions/, dte.cfg, .dteignore in a new project
+    python dte.py hook                   install a pre-commit hook that runs validate
 
 Options: --root DIR (default: cwd)  --decisions DIR (default: ROOT/decisions)
 Config:  ROOT/dte.cfg, key = value lines (summaries, protect_human, authority,
@@ -808,6 +812,12 @@ def cmd_tree(tree, args):
         for c in tree.ordered(tree.children.get(i, [])):
             walk(c, depth + 1)
 
+    if args.under:
+        if args.under not in tree.nodes:
+            print("unknown id: %s (%s)" % (args.under, tree.retired_hint(args.under)))
+            return 2
+        walk(args.under, 0)
+        return 0
     for i in tree.ordered():
         if tree.nodes[i].ring == "A":
             walk(i, 0)
@@ -1462,29 +1472,223 @@ def cmd_find(tree, args):
 
 def cmd_ratify(tree, args):
     """dte:B26, dte:B7"""
-    node = tree.nodes.get(args.id)
+    rc = 0
+    for i in args.ids:
+        rc = max(rc, ratify_one(tree, i, args.by))
+    return rc
+
+
+def ratify_one(tree, i, by):
+    node = tree.nodes.get(i)
     if node is None:
-        print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
+        print("unknown id: %s (%s)" % (i, tree.retired_hint(i)))
         return 2
     if not node.in_effect:
-        print("%s is %s; only in-effect nodes are ratified" % (args.id, node.status))
+        print("%s is %s; only in-effect nodes are ratified" % (i, node.status))
         return 2
     if node.made_by == "human":
-        print("%s is human-made; ratification is for ai and joint nodes" % args.id)
+        print("%s is human-made; ratification is for ai and joint nodes" % i)
         return 2
     text = read_text(node.path)
     nl = "\r\n" if "\r\n" in text else "\n"
     text = text.replace("\r\n", "\n")
-    text = set_field(text, "ratified_by", args.by)
+    text = set_field(text, "ratified_by", by)
     flipped = node.status == "proposed"
     if flipped:
         text = set_field(text, "status", "active")
     text = append_history(text, "- %s ratified by %s%s." % (
-        datetime.date.today().isoformat(), args.by, " (proposed -> active)" if flipped else ""))
+        datetime.date.today().isoformat(), by, " (proposed -> active)" if flipped else ""))
     write_text(node.path, text.replace("\n", nl))
-    print('ratified %s "%s" by %s%s' % (args.id, node.title, args.by,
+    print('ratified %s "%s" by %s%s' % (i, node.title, by,
                                         "; status proposed -> active" if flipped else ""))
     print("  it is now human-held (B11)")
+    return 0
+
+
+# ---------------------------------------------------------------- cite, brief, hook  dte:C14,B27
+
+COMMENT_STYLES = (
+    ("#", {".py", ".rb", ".sh", ".bash", ".zsh", ".fish", ".yml", ".yaml", ".toml", ".cfg", ".ini",
+           ".ps1", ".pl", ".r", ".txt", ".env", ".mk", ".cmake", ".dockerfile", ".gitignore",
+           ".dteignore", ""}),
+    ("//", {".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".go", ".rs", ".java", ".c", ".h", ".cpp",
+            ".hpp", ".cc", ".cs", ".swift", ".kt", ".kts", ".scala", ".dart", ".php", ".m", ".zig"}),
+    ("<!--", {".md", ".markdown", ".html", ".htm", ".xml", ".svg", ".vue", ".svelte"}),
+    ("/*", {".css", ".scss", ".less"}),
+    ("--", {".sql", ".lua", ".hs", ".elm"}),
+)
+NO_COMMENTS = {".json", ".csv", ".tsv"}
+
+
+def comment_line(ext, text):
+    ext = ext.lower()
+    if ext in NO_COMMENTS:
+        return None
+    for marker, exts in COMMENT_STYLES:
+        if ext in exts:
+            if marker == "<!--":
+                return "<!-- %s -->" % text
+            if marker == "/*":
+                return "/* %s */" % text
+            return "%s %s" % (marker, text)
+    return "# " + text
+
+
+def cmd_cite(tree, args):
+    """dte:C14"""
+    ids = split_ids(args.ids)
+    for i in ids:
+        if i not in tree.nodes:
+            print("cannot cite %s: %s" % (i, tree.retired_hint(i)))
+            return 2
+        if not tree.nodes[i].in_effect:
+            print("cannot cite %s: it is %s" % (i, tree.nodes[i].status))
+            return 2
+    path = os.path.abspath(args.file)
+    if not os.path.isfile(path):
+        print("no such file: %s" % args.file)
+        return 2
+    rel = tree.rel(path)
+    ext = os.path.splitext(path)[1]
+    text = read_text(path)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    lines = text.replace("\r\n", "\n").split("\n")
+    # where the file-level comment goes
+    at = 0
+    if lines and lines[0].startswith("#!"):
+        at = 1
+    if ext.lower() in (".md", ".markdown") and lines and lines[0].strip() == "---":
+        for k in range(1, len(lines)):
+            if lines[k].strip() == "---":
+                at = k + 1
+                break
+    # an existing top-of-file citation line: append to it
+    for k in range(at, min(at + 3, len(lines))):
+        m = CITE_RE.search(lines[k])
+        if m:
+            have = re.split(r"\s*,\s*", m.group(1))
+            new = [x for x in ids if x not in have]
+            if not new:
+                print("%s already cites %s" % (rel, ", ".join(ids)))
+                return 0
+            lines[k] = lines[k][:m.start(1)] + ",".join(have + new) + lines[k][m.end(1):]
+            write_text(path, nl.join(lines))
+            print("%s: added %s to the existing citation on line %d" % (rel, ",".join(new), k + 1))
+            return 0
+    comment = comment_line(ext, "dte:" + ",".join(ids))
+    if comment is None:
+        print("%s: %s files have no comments; cite from a sibling file or a README" % (rel, ext))
+        return 2
+    lines.insert(at, comment)
+    write_text(path, nl.join(lines))
+    print("%s: inserted %r on line %d" % (rel, comment, at + 1))
+    return 0
+
+
+def cmd_brief(tree, args):
+    """dte:B27"""
+    tree.validate()
+    ring = args.ring.upper()
+    if not re.match(r"^[A-Z]$", ring):
+        print("ring must be a single letter A-Z")
+        return 2
+    above = [n for n in tree.ordered_nodes() if n.in_effect and ring_depth(n.ring) < ring_depth(ring)]
+    scope_note = ""
+    if args.under:
+        if args.under not in tree.nodes:
+            print("unknown id: %s (%s)" % (args.under, tree.retired_hint(args.under)))
+            return 2
+        keep = {args.under}
+        for chain in tree.ancestors(args.under):
+            keep.update(x for x in chain if x in tree.nodes)
+        keep.update(tree.descendants(args.under))
+        above = [n for n in above if n.id in keep]
+        scope_note = " relevant to %s" % args.under
+    tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
+    prev = chr(ord(ring) - 1) if ring != "A" else None
+    print("DTE BRIEF: you operate at ring %s of this project's decision tree." % ring)
+    print()
+    print("Rules:")
+    print("  1. Decide only at ring %s or deeper. Create decisions with" % ring)
+    print("     `python %s new %s --title \"...\" --by <you> --parents <ids> --decision \"...\" --why \"...\"`." % (tool, ring))
+    if prev:
+        print("  2. Anything that belongs at ring %s or shallower, or whose ring is unclear, is not yours:" % prev)
+        print("     write decisions/inbox/<slug>.md and ask %s." % holder_of(prev, CONFIG))
+    else:
+        print("  2. You hold the core. Nothing is above you.")
+    print("  3. Cite what your work serves: `python %s cite <file> <ID>`. Refer to every decision as ID plus its title." % tool)
+    print("  4. Never change a decision made or ratified by a human. Before you finish, run")
+    print("     `DTE_RING=%s python %s validate`; it must print OK." % (ring, tool))
+    print()
+    print("Decisions above your ring that bind you%s (%d):" % (scope_note, len(above)))
+    cur = None
+    for n in above:
+        if n.ring != cur:
+            cur = n.ring
+            print("  ring %s:" % cur)
+        held = " [human-held]" if n.human_held else ""
+        print("    %s%s" % (n.label(), held))
+    if args.under:
+        print()
+        print("Your subtree: `python %s tree --under %s`; read any node with `python %s show <ID>`."
+              % (tool, args.under, tool))
+    return 0
+
+
+def cmd_hook(tree, args):
+    """dte:C14"""
+    hooks = os.path.join(tree.root, ".git", "hooks")
+    if not os.path.isdir(hooks):
+        print("no .git/hooks here; is %s a git repository?" % tree.root)
+        return 2
+    path = os.path.join(hooks, "pre-commit")
+    tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            if "dte" in fh.read():
+                print("pre-commit hook already runs dte")
+                return 0
+        print("a pre-commit hook already exists and does not mention dte; add this line to it:")
+        print("  python %s validate || exit 1" % tool)
+        return 2
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("#!/bin/sh\n# Refuse commits that break the decision tree.  dte:C14\n"
+                 "python %s validate || exit 1\n" % tool)
+    try:
+        os.chmod(path, 0o755)
+    except OSError:
+        pass
+    print("installed .git/hooks/pre-commit: runs `python %s validate` before every commit" % tool)
+    return 0
+
+
+def cmd_reparent(tree, args):
+    """dte:B26, dte:B24 (orphans are fixed here, never by hand)"""
+    node = tree.nodes.get(args.id)
+    if node is None:
+        print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
+        return 2
+    parents = split_ids(args.parents)
+    if args.id in parents:
+        print("a node cannot be its own parent")
+        return 2
+    err = check_parents(tree, node.ring, parents)
+    if err:
+        print(err)
+        return 2
+    for p in parents:
+        if not tree.nodes[p].in_effect:
+            print("parent %s is %s; pick an in-effect node" % (p, tree.nodes[p].status))
+            return 2
+    text = read_text(node.path)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    old = ", ".join(node.parents) or "none"
+    text = set_field(text, "parents", "[%s]" % ", ".join(parents))
+    text = append_history(text, "- %s re-parented from [%s] to [%s] by %s." % (
+        datetime.date.today().isoformat(), old, ", ".join(parents), args.by))
+    write_text(node.path, text.replace("\n", nl))
+    print('re-parented %s "%s": [%s] -> [%s]' % (args.id, node.title, old, ", ".join(parents)))
     return 0
 
 
@@ -1602,6 +1806,7 @@ def main(argv=None):
                    help="check changed nodes against an agent's ring (B15); default $DTE_RING")
     t = sub.add_parser("tree")
     t.add_argument("--files", action="store_true", help="show citing artifacts under each node")
+    t.add_argument("--under", default=None, metavar="ID", help="print only the subtree under ID")
     sub.add_parser("blast").add_argument("id")
     sub.add_parser("trace").add_argument("path")
     sub.add_parser("conflicts")
@@ -1645,8 +1850,12 @@ def main(argv=None):
     sub.add_parser("show").add_argument("id")
     sub.add_parser("find").add_argument("text")
     ra = sub.add_parser("ratify")
-    ra.add_argument("id")
+    ra.add_argument("ids", nargs="+")
     ra.add_argument("--by", required=True, help="the human ratifying")
+    rp = sub.add_parser("reparent")
+    rp.add_argument("id")
+    rp.add_argument("--parents", required=True, help="comma-separated parent ids")
+    rp.add_argument("--by", required=True)
     cf = sub.add_parser("conflict")
     cf.add_argument("a")
     cf.add_argument("b")
@@ -1654,6 +1863,13 @@ def main(argv=None):
     ex = sub.add_parser("export")
     ex.add_argument("--out", default=None)
     sub.add_parser("init")
+    ci = sub.add_parser("cite")
+    ci.add_argument("file")
+    ci.add_argument("ids", help="comma-separated ids")
+    br = sub.add_parser("brief")
+    br.add_argument("ring")
+    br.add_argument("--under", default=None, metavar="ID", help="restrict binding nodes to one subtree")
+    sub.add_parser("hook")
     args = ap.parse_args(argv)
     CONFIG.clear()
     CONFIG.update(load_config(args.root))
@@ -1665,8 +1881,8 @@ def main(argv=None):
         "next": cmd_next, "scope": cmd_scope, "inbox": cmd_inbox, "place": cmd_place,
         "authority": cmd_authority, "move": cmd_move, "retire": cmd_retire,
         "new": cmd_new, "show": cmd_show, "find": cmd_find, "ratify": cmd_ratify,
-        "conflict": cmd_conflict, "retired": cmd_retired, "export": cmd_export,
-        "init": cmd_init,
+        "conflict": cmd_conflict, "reparent": cmd_reparent, "retired": cmd_retired, "export": cmd_export,
+        "init": cmd_init, "cite": cmd_cite, "brief": cmd_brief, "hook": cmd_hook,
     }[args.cmd](tree, args)
 
 

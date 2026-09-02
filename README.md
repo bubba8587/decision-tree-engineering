@@ -66,16 +66,20 @@ python tools/dte.py authority         # who holds each ring, so whom to ask
 
 # change the tree (frontmatter is never hand-edited)
 python tools/dte.py new C --title "..." --by agent --parents B3 --decision "..." --why "..."
-python tools/dte.py ratify B3 --by owner
+python tools/dte.py cite src/thing.py C3   # insert the citation in the file's comment syntax
+python tools/dte.py ratify B3 B4 --by owner
 python tools/dte.py conflict B4 C2    # declare a contradiction on both sides
+python tools/dte.py reparent C7 --parents B5 --by agent   # fix an orphan
 python tools/dte.py move C4 B --by owner              # promote: new id, old retired, references rewritten
 python tools/dte.py retire B5 --by owner --superseded-by B24   # retire through the ledger
 python tools/dte.py inbox / place <slug> B --by owner # escalation and placement
 
 # check and integrate
 python tools/dte.py validate --as C   # consistency; as an agent at ring C, did I overstep?
+python tools/dte.py brief C --under B3   # the block to hand a subagent working at ring C
 python tools/dte.py export --out tree.json   # nodes, citations, ledger, inbox: join it to your graph
 python tools/dte.py init              # scaffold a new project
+python tools/dte.py hook              # pre-commit: refuse commits that break the tree
 ```
 
 Two more rules the tool enforces, both from the core:
@@ -100,6 +104,7 @@ project.
 
 - `SPEC.md` for the normative rules.
 - `decisions/` for this repo's own tree. DTE is built with DTE.
+- `WALKTHROUGH.md` for the whole life cycle on a toy project, real output.
 - `ADOPTING.md` for bringing DTE into an existing project.
 - `CLAUDE.md` for how AI agents are expected to behave in a DTE repo.
 

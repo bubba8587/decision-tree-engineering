@@ -1,4 +1,4 @@
-"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11,B26,C12,C13
+"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11,B26,C12,C13,C14,B27
 
 Run: python -m unittest discover -s tests
 """
@@ -649,6 +649,89 @@ class TestAuthoring(Base):
                 os.environ["DTE_RING"] = old
         self.assertEqual(code, 1)
         self.assertIn("B3: changed by an agent at ring C", out)
+
+
+class TestCiteBriefHook(Base):
+    """dte:C14, dte:B27"""
+
+    def test_cite_python_and_markdown(self):
+        write_file(self.root, "src/new.py", "#!/usr/bin/env python\nprint(1)\n")
+        code, out = run(self.root, "cite", os.path.join(self.root, "src", "new.py"), "B1,C1")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self._read("src/new.py").splitlines()[1], "# dte:B1,C1")
+        write_file(self.root, "notes.md", "---\ntitle: x\n---\n# Notes\n")
+        code, out = run(self.root, "cite", os.path.join(self.root, "notes.md"), "B2")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self._read("notes.md").splitlines()[3], "<!-- %s -->" % ("dte" + ":B2"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+
+    def test_cite_appends_to_existing_and_refuses_bad(self):
+        code, out = run(self.root, "cite", os.path.join(self.root, "src", "a.py"), "B1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("added B1", out)
+        self.assertEqual(self._read("src/a.py").splitlines()[0], "# dte:C1,B1")
+        code, out = run(self.root, "cite", os.path.join(self.root, "src", "a.py"), "C1")
+        self.assertIn("already cites", out)
+        code, out = run(self.root, "cite", os.path.join(self.root, "src", "a.py"), "Z9")
+        self.assertEqual(code, 2)
+        write_file(self.root, "data.json", "{}\n")
+        code, out = run(self.root, "cite", os.path.join(self.root, "data.json"), "B1")
+        self.assertEqual(code, 2)
+        self.assertIn("no comments", out)
+
+    def test_brief(self):
+        write_file(self.root, "dte.cfg", "authority = A:human, B:orchestrator, C+:subagent\n")
+        code, out = run(self.root, "brief", "C")
+        self.assertEqual(code, 0, out)
+        self.assertIn("you operate at ring C", out)
+        self.assertIn("ask orchestrator", out)
+        self.assertIn("DTE_RING=C", out)
+        self.assertIn("A1 A1 title [human-held]", out)
+        self.assertIn("B1 B1 title (ai, unratified)", out)
+        self.assertNotIn("C1 C1 title", out)
+
+    def test_brief_under_restricts(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        code, out = run(self.root, "brief", "C", "--under", "B1")
+        self.assertIn("B1 B1 title", out)
+        self.assertNotIn("B3", out)
+        self.assertIn("tree --under B1", out)
+
+    def test_hook(self):
+        self._init_repo()
+        code, out = run(self.root, "hook")
+        self.assertEqual(code, 0, out)
+        hook = os.path.join(self.root, ".git", "hooks", "pre-commit")
+        self.assertTrue(os.path.exists(hook))
+        with open(hook) as fh:
+            self.assertIn("validate", fh.read())
+        code, out = run(self.root, "hook")
+        self.assertIn("already runs dte", out)
+
+    def test_reparent_fixes_an_orphan(self):
+        self._init_repo()
+        run(self.root, "retire", "B1", "--by", "agent")          # C1 is now an orphan
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 1)
+        self.assertIn("C1: ORPHAN", out)
+        code, out = run(self.root, "reparent", "C1", "--parents", "B2", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        self.assertIn("parents: [B2]", self._read("decisions/C/C1.md"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        code, out = run(self.root, "reparent", "C1", "--parents", "C1", "--by", "agent")
+        self.assertEqual(code, 2)
+
+    def test_ratify_many_and_tree_under(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai", status="proposed")
+        code, out = run(self.root, "ratify", "B1", "B3", "--by", "owner")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out.count("ratified "), 2)
+        code, out = run(self.root, "tree", "--under", "B1")
+        self.assertIn("B1 B1 title", out)
+        self.assertIn("  C1 C1 title", out)
+        self.assertNotIn("A1", out)
 
 
 class TestQueries(Base):

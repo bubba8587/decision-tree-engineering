@@ -2,3 +2,5 @@
 *.png
 *.jpg
 *.lock
+# WALKTHROUGH.md is a transcript of a toy project; its dte: tokens belong to that tree, not this one.
+WALKTHROUGH.md

@@ -10,9 +10,11 @@ because of A3 "every decision records who made it, human or AI".
 
 You operate at a ring. If the human or the agent that spawned you told you
 which, use that. In this repo, if nobody said, assume ring **B**: the owner
-holds A, and subagents you spawn get C or deeper. Tell every subagent its
-ring in its instructions. `python tools/dte.py authority` shows who holds
-each ring and therefore whom to ask.
+holds A, and subagents you spawn get C or deeper. Put the output of
+`python tools/dte.py brief C [--under <ID>]` at the top of every
+subagent's instructions and set `DTE_RING=C` in its environment (B27).
+`python tools/dte.py authority` shows who holds each ring and therefore
+whom to ask.
 
 The map binds you, not the owner. The owner may decide at any ring.
 
@@ -47,8 +49,9 @@ permission is gone and the action becomes an inbox item instead.
 ## While you work
 
 - Every artifact you create or substantially change carries a citation:
-  `dte:ID` in a comment (code) or an HTML comment / prose (docs). Cite the
-  most specific node that explains it.
+  `python tools/dte.py cite <file> <ID>` puts it at the top in the right
+  comment syntax; line-level citations are written by hand. Cite the most
+  specific node that explains it.
 - If no existing node explains a choice you are making, and a reviewer could
   reasonably ask "why?", that is a new decision. Decide where it belongs:
   - **At your ring or deeper**: create it with
