@@ -42,6 +42,15 @@ From then on every agent session leaves a trail of `made_by: ai` nodes, and
 the owner's job becomes ratification: read the unratified list at the end of
 each validate run, agree or supersede, set `ratified_by`.
 
+Give each agent a ring (A6). Set `authority` in `dte.cfg` so the tool can
+say whom to ask, for example `A:human, B:orchestrator, C+:subagent`. An
+orchestrating agent at ring B spawns subagents at C and tells them so; they
+run `dte validate --as C` and anything they try to decide at B or A lands in
+the inbox with a prompt to escalate. You can still decide at any ring
+yourself; the map binds agents, not people. The owner's own decisions, and
+any AI decision the owner ratifies, become human-held: an agent cannot retire
+or move them without a human writing `authorized_by` (B11).
+
 ## Using it
 
 - Before changing a decision: `dte blast <ID>`. The report is the checklist.

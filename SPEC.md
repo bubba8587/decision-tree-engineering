@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,B1,B2,B3,B4,B5,B7,B10 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B2,B3,B4,B5,B7,B10,B11,B12,B13,B14,B15,B16 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -35,6 +35,13 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
 - **Precedence**: when two active nodes contradict, the one in the shallower
   ring wins (dte:B4).
 - **Provenance**: who made the decision: `human`, `ai`, or `joint` (dte:B7).
+- **Human-held**: a node made by a human, or ratified by one (dte:B11).
+- **Authority**: the ring an agent operates at. It decides at that ring or
+  deeper and asks upward for anything shallower (dte:A6).
+- **Inbox**: where a decision waits, without an ID, until someone with
+  authority places it in a ring (dte:B14).
+- **Summary**: the node's `title`, which always accompanies its ID when a
+  model refers to it (dte:A5, dte:B16).
 
 ## 3. Identity and rings (dte:B2)
 
@@ -67,9 +74,13 @@ made_by: ai               # human | ai | joint
 by: Claude Fable 5.1      # person or model, free text
 date: 2026-09-02
 ratified_by:              # human who confirmed an ai/joint decision (optional)
+authorized_by:            # human who authorised retiring/moving a human-held node
 confidence: high          # low | medium | high (optional)
 ---
 ```
+
+`title` is the summary string (dte:A5). Write it as the decision in one
+sentence, under 100 characters, so it can stand beside the ID in chat.
 
 Body sections, in this order. Only **Decision** and **Why** are required.
 
@@ -131,6 +142,13 @@ Optional. One line per event: created, ratified, moved, superseded.
 - **R6 (dte:A2)** The goal is total coverage: every artifact cites at least one
   node. Coverage below 100% is not an error (adoption is incremental, dte:C4)
   but it is always reported.
+- **R7 (dte:B11)** A human-held node that is superseded, reverted, or moved
+  must carry `authorized_by` naming a human. Off with `protect_human = off`.
+- **R8 (dte:A6, dte:B15)** An agent never places or alters a node shallower
+  than its ring. It writes the decision to the inbox and asks. With
+  `--as <ring>`, validate enforces this on the agent's changed files.
+- **R9 (dte:A5)** A model refers to a decision as `ID title`, never bare ID,
+  unless `summaries = off`.
 
 ## 7. Operations
 
@@ -159,7 +177,38 @@ no replacement to re-parent to.
    previously lost, and vice versa.
 
 **Ratify.** A human sets `ratified_by:` on an AI or joint node, and flips
-`proposed` to `active` if applicable.
+`proposed` to `active` if applicable. A ratified node is human-held from
+then on (dte:B11).
+
+**Escalate (dte:B14).** When a decision belongs above your ring, or you do
+not know where it belongs, write `decisions/inbox/<slug>.md`:
+
+```yaml
+---
+title: One-sentence statement of the decision
+proposed_ring: B          # your best guess, or omit
+ask: orchestrator         # who should place it; defaults to the ring's holder
+made_by: ai
+by: <model>
+date: 2026-09-02
+parents: [A1]             # candidate parents, optional
+---
+## Decision
+## Why
+```
+
+Then say so in chat, with the title. Validate and tree print PENDING
+PLACEMENT with the question to ask until it is placed.
+
+**Place (dte:B14).** Someone with authority runs
+`dte place <slug> <ring> --by <name> [--parents A1,B2]`. The tool allocates
+the ID, writes the node into the ring with a History line, and removes the
+inbox file. The placer is not thereby ratifying the content; `ratified_by`
+stays empty until a human sets it.
+
+**Authorise an override (dte:B11).** To retire or move a human-held node, a
+human sets `authorized_by:` on it. An AI may prepare the change but the
+field must name a person.
 
 ## 8. Blast radius (dte:C2)
 
@@ -187,14 +236,42 @@ cross-reference:
 - DTE does not model structural edges, and a graph does not model precedence
   or provenance. Neither tool should grow to absorb the other.
 
-## 10. Tooling contract (dte:B6)
+## 10. Authority and agents (dte:A6, dte:B13, dte:B15)
+
+Every agent has a ring. A spawning agent states it in the subagent's
+instructions ("you operate at ring C"). The agent:
+
+- makes decisions at its ring or deeper, and cites them;
+- writes anything shallower, or of unclear ring, to the inbox and asks;
+- runs `dte validate --as <ring>` before finishing, which fails if any node
+  it changed is shallower than its ring or is human-held without
+  `authorized_by`.
+
+The advisory map in `dte.cfg` (`authority = A:human, B:orchestrator,
+C+:subagent`) says who holds each ring, so "ask upward" has an addressee.
+`dte authority` prints it. The map binds agents. It never binds humans, who
+may decide at any ring; a human-made node is valid anywhere.
+
+## 11. Configuration (dte:B12)
+
+`dte.cfg` at the project root, `key = value` per line, `#` comments.
+
+| key             | default | meaning                                      |
+|-----------------|---------|----------------------------------------------|
+| `summaries`     | `on`    | print `ID title`; `off` prints bare IDs (A5) |
+| `protect_human` | `on`    | enforce R7 (B11)                             |
+| `authority`     | none    | advisory ring-to-holder map (B13)            |
+
+## 12. Tooling contract (dte:B6)
 
 A conforming tool is a single file with no dependencies beyond the language
-runtime, and implements at least: `validate`, `tree`, `blast`, `trace`,
-`conflicts`, `coverage`, `next`. The reference implementation is
-`tools/dte.py`. Exit code is non-zero when `validate` finds errors.
+runtime, and implements at least: `validate` (with `--as`), `tree`, `blast`,
+`trace`, `conflicts`, `coverage`, `next`, `inbox`, `place`, `authority`.
+Every output that names a node prints `ID title` unless summaries are off.
+The reference implementation is `tools/dte.py`. Exit code is non-zero when
+`validate` finds errors.
 
-## 11. Open questions (not yet decided)
+## 13. Open questions (not yet decided)
 
 - Whether a node may have a parent in a *deeper* ring for "supporting" links.
   Current answer: no; use Consequences prose.
