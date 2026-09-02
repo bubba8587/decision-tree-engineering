@@ -1,4 +1,4 @@
-<!-- dte:B8,A3,A5,A6,B14,B15 -->
+<!-- dte:B8,A3,A5,A6,B14,B15,B17 -->
 # Working in this repo (and any DTE repo)
 
 This project uses Decision Tree Engineering. Read `SPEC.md` once. Then follow
@@ -58,15 +58,26 @@ for every node; copy from there. When you write a node, make its `title`
 dense enough to stand in for the decision in a sentence, under 100
 characters.
 
+## When you report work (B17)
+
+Every time you tell the owner that something now exists or was built, name
+the decision that governs it in the same message, as ID plus title. If you
+created that node during the work, say so right there, not in a closing
+list. "The inbox is built" is incomplete; "the inbox is built, governed by
+B14 'unplaced decisions wait in decisions/inbox without an ID until someone
+with authority places them', which I created" is complete. The owner may
+want to overrule the decision, and cannot if they only hear about the
+artifact.
+
 ## Before you say you are done
 
 - `python tools/dte.py validate --as <your ring>` must print `OK`. Warnings
   are allowed; read them anyway. It fails if you touched a node above your
   ring or a human-held node.
-- List any new nodes you created, with titles, so the owner can ratify
-  them. List anything you put in the inbox, with the question it is
-  waiting on. Unratified AI decisions are printed at the end of every
-  validate run; do not try to clear that list yourself.
+- Validate ends with "Nodes changed in this working tree". Copy those lines
+  into your report so the owner can ratify them. List anything you put in
+  the inbox, with the question it is waiting on. Unratified AI decisions
+  are also printed; do not try to clear that list yourself.
 
 ## Rings in this repo
 

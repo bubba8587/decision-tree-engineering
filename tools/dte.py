@@ -564,9 +564,24 @@ def print_inbox(tree):
         print("    ASK %s: where does this belong?  then: dte place %s <ring> --by <name>" % (who, it.slug))
 
 
+def print_changed_nodes(tree):
+    """dte:C7"""
+    changed, exact = tree.changed_files()
+    if not exact:
+        return
+    by_path = {tree.rel(n.path): n for n in tree.nodes.values()}
+    hits = [by_path[r] for r in sorted(changed) if r in by_path]
+    if not hits:
+        return
+    print("\nNodes changed in this working tree (report these, ID plus title):  dte:B17")
+    for n in sorted(hits, key=lambda n: id_key(n.id)):
+        print("  %s" % n.label())
+
+
 def cmd_validate(tree, args):
     ok = tree.validate(as_ring=args.as_ring)
     report(tree)
+    print_changed_nodes(tree)
     n_cited = len({r for r, _, _, _ in tree.citations})
     print("\n%d nodes, %d pending, %d citations in %d/%d artifacts, %d errors, %d warnings"
           % (len(tree.nodes), len(tree.inbox), len(tree.citations), n_cited,

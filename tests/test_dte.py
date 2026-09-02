@@ -258,6 +258,14 @@ class TestAuthority(Base):
         code, out = run(self.root, "validate", "--as", "B")
         self.assertEqual(code, 0, out)
 
+    def test_validate_lists_changed_nodes(self):
+        # dte:C7
+        self._init_repo()
+        write_node(self.root, id="C2", parents="B1", made_by="ai", title="a fresh node")
+        code, out = run(self.root, "validate")
+        self.assertIn("Nodes changed in this working tree", out)
+        self.assertIn("C2 a fresh node", out)
+
     def test_agent_within_ring_passes(self):
         self._init_repo()
         write_node(self.root, id="C2", parents="B1", made_by="ai")
