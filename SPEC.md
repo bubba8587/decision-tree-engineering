@@ -50,7 +50,8 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
 - An ID is one uppercase letter followed by a positive integer: `A1`, `B14`,
   `C3`. The letter is the ring. `A` is the core.
 - Numbers within a ring are allocated upward and **never reused**, even after a
-  node is moved or reverted. `dte next <ring>` gives the next free number.
+  node is moved or reverted. `dte next <ring>` gives the next free number,
+  counting the tree, the ledger, and every branch git knows about (dte:C15).
 - The ID appears in the frontmatter `id:` field and is the file name:
   `decisions/<ring>/<ID>.md`.
 - There are no aliases. A node **moved** to another ring becomes a new node

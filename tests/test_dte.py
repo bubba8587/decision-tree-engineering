@@ -723,6 +723,17 @@ class TestCiteBriefHook(Base):
         code, out = run(self.root, "reparent", "C1", "--parents", "C1", "--by", "agent")
         self.assertEqual(code, 2)
 
+    def test_next_reserves_ids_on_other_branches(self):
+        # dte:C15
+        self._init_repo()
+        self._git("checkout", "-q", "-b", "feature")
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        self._git("add", "-A")
+        self._git("commit", "-q", "-m", "B3 on feature")
+        self._git("checkout", "-q", "-")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "decisions", "B", "B3.md")))
+        self.assertEqual(run(self.root, "next", "B")[1].strip(), "B4")
+
     def test_ratify_many_and_tree_under(self):
         write_node(self.root, id="B3", parents="A1", made_by="ai", status="proposed")
         code, out = run(self.root, "ratify", "B1", "B3", "--by", "owner")

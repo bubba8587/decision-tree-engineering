@@ -967,10 +967,41 @@ def cmd_coverage(tree, args):
     return 0
 
 
+def branch_ids(tree):
+    """Ids present on every branch git knows about, so parallel branches never mint the same number.  dte:C15"""
+    cache = tree.__dict__.get("_branch_ids")
+    if cache is not None:
+        return cache
+    found = set()
+    try:
+        refs = subprocess.run(
+            ["git", "-C", tree.root, "for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+            capture_output=True, text=True, check=True).stdout.split()
+        dec = tree.rel(tree.decisions_dir)
+        for ref in refs:
+            ls = subprocess.run(["git", "-C", tree.root, "ls-tree", "-r", "--name-only", ref, "--", dec],
+                                capture_output=True, text=True).stdout
+            for path in ls.splitlines():
+                base = os.path.splitext(os.path.basename(path))[0]
+                if path.endswith(".md") and ID_RE.match(base):
+                    found.add(base)
+            led = subprocess.run(["git", "-C", tree.root, "show", "%s:%s/%s" % (ref, dec, LEDGER)],
+                                 capture_output=True, text=True).stdout
+            for line in led.splitlines():
+                first = line.split("\t", 1)[0]
+                if ID_RE.match(first):
+                    found.add(first)
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    tree._branch_ids = found
+    return found
+
+
 def next_id(tree, ring):
-    """Superseded and reverted nodes keep their files, so numbers are never reused.  dte:B23"""
+    """Numbers are never reused: not from the tree, the ledger, or any branch.  dte:B23,C15"""
     used = [n.number for n in tree.nodes.values() if n.ring == ring]
     used += [int(ID_RE.match(i).group(2)) for i in tree.retired if i.startswith(ring)]
+    used += [int(ID_RE.match(i).group(2)) for i in branch_ids(tree) if i.startswith(ring)]
     return "%s%d" % (ring, (max(used) + 1) if used else 1)
 
 
