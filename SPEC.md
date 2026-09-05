@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B26,B27 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B29,B27 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -6,7 +6,7 @@ cites the decision it derives from; the decision file holds the rationale.
 
 ## 1. Premise
 
-Every element of a project exists because a decision was made (dte:A2). Some
+Nothing in a project can exist without a decision having been made (dte:A2). Some
 decisions are made by humans, some by AI, some jointly (dte:A3). DTE records the
 decisions as a tree of **rings** and links every **artifact** to the decisions it
 serves, so that the **blast radius** of changing any decision is knowable (dte:A1).
@@ -79,6 +79,7 @@ by: Claude Fable 5.1      # person or model, free text
 date: 2026-09-02
 ratified_by:              # human who confirmed an ai/joint decision (optional)
 authorized_by:            # human who authorised retiring/moving a human-held node
+contested_by:             # who ran this node's one contest while unratified (dte:B28)
 confidence: high          # low | medium | high (optional)
 ---
 ```
@@ -99,7 +100,7 @@ The reasoning. What the parents demanded, what was traded off.
 What this makes true for the rings below and for artifacts.
 
 ## Alternatives considered
-Optional.
+Optional. A contest (dte:B28) records its verdict here.
 
 ## History
 Optional. One line per event: created, ratified, moved, superseded.
@@ -164,7 +165,7 @@ Optional. One line per event: created, ratified, moved, superseded.
 [--decision "..." --why "..."]`. The tool allocates the ID and writes the
 node; unfilled sections are `TODO` and validate warns until they are
 written. Cite it from the artifacts it produces. Run `dte validate`.
-Frontmatter is never hand-edited (dte:B26).
+Frontmatter is never hand-edited (dte:B29).
 
 **Supersede.** Write the new node. Run `dte blast OLD`. Then
 `dte retire OLD --by <name> --superseded-by NEW [--authorized-by <human>]`:
@@ -200,9 +201,30 @@ has declared contradictions: promotion means it now wins ones it lost.
 Never `git mv` or hand-delete a node file; validation rejects renames and
 ledger-less deletions.
 
+**Set a field (dte:B29, dte:C18).** `dte set <ID> title|confidence <value>
+--by <name> [--authorized-by <human>]` is the one generic frontmatter write,
+for the two fields that carry no invariant. Every other field belongs to the
+command that owns its invariant, and `set` names that command when refused.
+Provenance fields are never changed after creation (dte:A3). The old value
+goes to History.
+
 **Ratify.** `dte ratify <ID> --by <human>` sets `ratified_by` and flips
 `proposed` to `active`. A ratified node is human-held from then on
 (dte:B11).
+
+**Contest (dte:B28).** An unratified node is not a block, but before an
+agent first acts under it the agent runs `dte contest <ID>` (dte:C17). The
+tool prints the node, its parents as the rubric, and four slots: keep,
+opposite, deletion, variant. The agent builds each alternative far enough to
+scope its cost, judges them against the parents alone, and records the
+verdict with `dte contest <ID> --record --chosen <slot> --by <name> --note
+"..."`. Parents are read, never reopened. Siblings are not touched. Children
+and citing artifacts count for nothing, not even as cost: a better node may
+need none of them. If keep did not win, the agent writes the winner with
+`new` and retires the loser. A contested node is settled (dte:A7): it is
+acted on without re-asking until a human ratifies it or an agent supersedes
+it; a second contest needs `--again`. Ratification then reviews a comparison
+with costs, not a bare proposal.
 
 **Declare a contradiction.** `dte conflict <A> <B>` writes `conflicts_with`
 on both nodes and prints the winner by ring (dte:B4).
@@ -318,10 +340,10 @@ the same depth to be useful.
 ## 13. Tooling contract (dte:B6)
 
 A conforming tool is a single file with no dependencies beyond the language
-runtime, and implements (dte:B26): asking the tree with `show`, `find`,
+runtime, and implements (dte:B29): asking the tree with `show`, `find`,
 `tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`,
 `scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it
-with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `move`,
+with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18), `contest` (dte:C17), `move`,
 `retire`, `inbox`, `place`; and `validate` (with `--as`, defaulting to `$DTE_RING`),
 `export` (JSON: nodes, citations, ledger, inbox; the join surface for
 structural tools, dte:C12), `init` (scaffold, dte:C13), and `hook`

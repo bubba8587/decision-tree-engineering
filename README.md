@@ -70,6 +70,9 @@ python tools/dte.py cite src/thing.py C3   # insert the citation in the file's c
 python tools/dte.py ratify B3 B4 --by owner
 python tools/dte.py conflict B4 C2    # declare a contradiction on both sides
 python tools/dte.py reparent C7 --parents B5 --by agent   # fix an orphan
+python tools/dte.py set B3 title "..." --by owner           # the one generic field write: title or confidence
+python tools/dte.py contest B3                            # one contest per unratified node: alternatives, costs, verdict
+python tools/dte.py contest B3 --record --chosen keep --by agent --note "..."
 python tools/dte.py move C4 B --by owner              # promote: new id, old retired, references rewritten
 python tools/dte.py retire B5 --by owner --superseded-by B24   # retire through the ledger
 python tools/dte.py inbox / place <slug> B --by owner # escalation and placement

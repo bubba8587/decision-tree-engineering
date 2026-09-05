@@ -1,4 +1,4 @@
-"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11,B26,C12,C13,C14,B27
+"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11,B29,C12,C13,C14,B27
 
 Run: python -m unittest discover -s tests
 """
@@ -527,7 +527,7 @@ class TestRetire(Base):
 
 
 class TestAuthoring(Base):
-    """dte:B26, dte:C12, dte:C13"""
+    """dte:B29, dte:C12, dte:C13"""
 
     def test_new_writes_a_valid_node(self):
         code, out = run(self.root, "new", "C", "--title", "A fresh rule", "--by", "agent",
@@ -708,6 +708,70 @@ class TestCiteBriefHook(Base):
             self.assertIn("validate", fh.read())
         code, out = run(self.root, "hook")
         self.assertIn("already runs dte", out)
+
+    def test_set_writes_whitelisted_fields_and_guards_human_held(self):
+        # dte:C18, dte:B29
+        code, out = run(self.root, "set", "B1", "title", "A  new   title", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/B/B1.md")
+        self.assertIn("title: A new title", text)
+        self.assertIn("title changed from", text)
+        code, out = run(self.root, "set", "B1", "confidence", "low", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        self.assertIn("confidence: low", self._read("decisions/B/B1.md"))
+        code, out = run(self.root, "set", "B1", "confidence", "certain", "--by", "agent")
+        self.assertEqual(code, 2)
+        code, out = run(self.root, "set", "B1", "status", "reverted", "--by", "agent")
+        self.assertEqual(code, 2)   # invariant-bearing field: redirected to its command
+        self.assertIn("retire", out)
+        code, out = run(self.root, "set", "B1", "by", "someone else", "--by", "agent")
+        self.assertEqual(code, 2)   # provenance is fixed (A3)
+        code, out = run(self.root, "set", "B2", "title", "Reworded", "--by", "agent")
+        self.assertEqual(code, 2)   # B2 is human-made: needs --authorized-by (B11)
+        self.assertIn("authorized-by", out)
+        code, out = run(self.root, "set", "B2", "title", "Reworded", "--by", "agent",
+                        "--authorized-by", "owner")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/B/B2.md")
+        self.assertIn("title: Reworded", text)
+        self.assertIn("authorized_by: owner", text)
+        code, out = run(self.root, "set", "B9", "title", "x", "--by", "agent")
+        self.assertEqual(code, 2)
+
+    def test_contest_runs_once_and_records_the_verdict(self):
+        # dte:C17, dte:B28
+        code, out = run(self.root, "contest", "B1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("CONTEST B1", out)
+        self.assertIn("Rubric", out)
+        self.assertIn("A1", out)
+        for slot in ("keep", "opposite", "deletion", "variant"):
+            self.assertIn(slot, out)
+        code, out = run(self.root, "contest", "B2")
+        self.assertEqual(code, 2)   # human-made: settled, never contested
+        code, out = run(self.root, "contest", "B1", "--record", "--chosen", "keep", "--by", "agent")
+        self.assertEqual(code, 2)   # no note
+        code, out = run(self.root, "contest", "B1", "--record", "--chosen", "keep", "--by", "agent",
+                        "--note", "opposite: 3 files, fails A1. deletion: A1 alone cannot explain C1.")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/B/B1.md")
+        self.assertIn("contested_by: agent", text)
+        self.assertIn("## Alternatives considered", text)
+        self.assertIn("keep wins", text)
+        self.assertIn("contested by agent; keep won", text)
+        code, out = run(self.root, "contest", "B1")
+        self.assertEqual(code, 2)
+        self.assertIn("already contested", out)
+        code, out = run(self.root, "contest", "B1", "--again")
+        self.assertEqual(code, 0, out)
+        code, out = run(self.root, "tree")
+        self.assertIn("(ai, unratified, contested)", out)
+        code, out = run(self.root, "validate")
+        self.assertIn("1 contested", out)
+        code, out = run(self.root, "ratify", "B1", "--by", "owner")
+        self.assertEqual(code, 0, out)
+        code, out = run(self.root, "contest", "B1", "--again")
+        self.assertEqual(code, 2)   # ratified: settled
 
     def test_reparent_fixes_an_orphan(self):
         self._init_repo()

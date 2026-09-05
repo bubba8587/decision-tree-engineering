@@ -1,4 +1,4 @@
-<!-- dte:B8,B14,B15,B17,B18,B19,B20,B25 -->
+<!-- dte:B8,B14,B15,B17,B18,B19,B20,B25,B28 -->
 # Working in this repo (and any DTE repo)
 
 This project uses Decision Tree Engineering. Read `SPEC.md` once. Then follow
@@ -57,7 +57,7 @@ permission is gone and the action becomes an inbox item instead.
   - **At your ring or deeper**: create it with
     `python tools/dte.py new <ring> --title "..." --by <your model name>
     --parents ... --decision "..." --why "..."`. Never hand-write
-    frontmatter and never pick numbers by hand (B26). Say what you decided,
+    frontmatter and never pick numbers by hand (B29). Say what you decided,
     why the parents demanded it, and what it implies. `--confidence medium`
     or `low` when guessing the owner's preference, and say so.
   - **Shallower than your ring, or you are not sure**: do not create it.
@@ -71,6 +71,19 @@ permission is gone and the action becomes an inbox item instead.
 - Never resolve a contradiction by editing the loser. Precedence is
   position. If the ring order gives the wrong answer, that is a move, and
   moves above your ring are not yours to make.
+
+## Before you act under an unratified node (B28)
+
+A node marked `unratified` and not `contested` gets one contest before you
+first act under it: `python tools/dte.py contest <ID>`. Build the
+alternatives it lists (keep, opposite, deletion, maybe a variant) far enough
+to scope their cost, judge them against the parents alone, pick one, and
+record it with `--record`. Parents are the rubric: read, never reopened.
+Siblings are not touched. Children and citing artifacts count for nothing,
+not even as cost. If keep lost, write the winner with `new` and retire the
+loser. After that the node is settled: act on it and never re-ask (A7).
+This is B28 "an unratified node gets one recorded contest: alternatives
+built, costed, judged by its parents; then settled".
 
 ## When you talk about decisions (A5)
 
@@ -117,7 +130,7 @@ artifact.
 
 ## Rings in this repo
 
-- `A` core goals. A1, A5, A6, A7 are the owner's; A2 to A4 are proposed
+- `A` core goals. A1, A2, A5, A6, A7 are the owner's; A3 and A4 are proposed
   and await ratification. Do not add to ring A. Inbox it and ask.
 - `B` format and rules of DTE itself.
 - `C` how the reference tool implements ring B.

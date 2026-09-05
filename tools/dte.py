@@ -22,6 +22,8 @@ One file, standard library only, Python 3.8+. Copy it into any project.
     python dte.py brief <ring> [--under ID]   the block to hand a subagent at that ring
     python dte.py conflict <A> <B>       declare a contradiction on both sides
     python dte.py reparent <ID> --parents A1,B2 --by NAME   fix an orphan
+    python dte.py set <ID> title|confidence VALUE --by NAME [--authorized-by NAME]   the one generic field write
+    python dte.py contest <ID> [--record --chosen X --by NAME --note ...]   one contest per unratified node
     python dte.py move <ID> <ring> --by NAME [--parents A1] [--authorized-by NAME]
     python dte.py retire <ID> --by NAME [--superseded-by NEW] [--authorized-by NAME]
     python dte.py inbox / place <slug> <ring> --by NAME [--parents A1,B2]
@@ -53,7 +55,7 @@ LIST_FIELDS = {"parents", "supersedes", "conflicts_with"}
 # No depends_on or structural fields: that axis belongs to the graph.  dte:B9
 KNOWN_FIELDS = LIST_FIELDS | {
     "id", "title", "status", "superseded_by", "made_by", "by", "date",
-    "ratified_by", "confidence", "authorized_by",
+    "ratified_by", "confidence", "authorized_by", "contested_by",
 }
 INBOX_FIELDS = {"title", "proposed_ring", "ask", "made_by", "by", "date", "parents", "confidence"}
 IN_EFFECT = {"proposed", "active"}
@@ -186,6 +188,7 @@ class Node:
         self.superseded_by = data.get("superseded_by") or None
         self.ratified_by = data.get("ratified_by") or None
         self.authorized_by = data.get("authorized_by") or None
+        self.contested_by = data.get("contested_by") or None   # dte:B28
         self.confidence = data.get("confidence") or None
         for f in LIST_FIELDS:
             v = data.get(f)
@@ -221,7 +224,10 @@ class Node:
         if self.status != "active":
             tag += " [%s]" % self.status
         if self.made_by != "human":
-            tag += " (%s%s)" % (self.made_by, "" if self.ratified_by else ", unratified")
+            state = "" if self.ratified_by else ", unratified"
+            if not self.ratified_by and self.contested_by:
+                state += ", contested"   # dte:B28
+            tag += " (%s%s)" % (self.made_by, state)
         return "%s %s%s" % (self.id, self.title, tag)
 
 
@@ -736,9 +742,11 @@ def report(tree, show_unratified=True):
     if show_unratified:
         un = tree.unratified()
         if un:
-            print("\nUnratified AI/joint decisions (%d):  dte:B7" % len(un))
+            contested = sum(1 for n in un if n.contested_by)
+            print("\nUnratified AI/joint decisions (%d, %d contested):  dte:B7, dte:B28" % (len(un), contested))
             for n in un:
-                print("  %s  [%s: %s]" % (n.label(), n.made_by, n.by))
+                who = ("  contested by %s" % n.contested_by) if n.contested_by else ""
+                print("  %s  [%s: %s]%s" % (n.label(), n.made_by, n.by, who))
 
 
 def print_inbox(tree):
@@ -1185,12 +1193,16 @@ def cmd_retire(tree, args):
     files = sorted({rel for rel, _, cid, _ in tree.citations if cid == old_id})
     children = list(tree.children.get(old_id, []))
     if new_id:
+        t = read_text(new.path)
+        nl = "\r\n" if "\r\n" in t else "\n"
+        t = t.replace("\r\n", "\n")
         if old_id not in new.supersedes:
-            t = read_text(new.path)
-            nl = "\r\n" if "\r\n" in t else "\n"
-            t = t.replace("\r\n", "\n")
             t = set_field(t, "supersedes", "[%s]" % ", ".join(new.supersedes + [old_id]))
-            write_text(new.path, t.replace("\n", nl))
+        carried = _section(node.body, "## Alternatives considered") if node.contested_by else ""
+        if carried:   # dte:C17 the contest that produced the successor travels with it
+            t = _insert_section(t, "## Alternatives considered",
+                                "Carried from %s, which this node supersedes.\n\n%s" % (old_id, carried))
+        write_text(new.path, t.replace("\n", nl))
         rewrite_references(tree, old_id, new_id)
     fate = retire_node(tree, node, action, new_id, args.by, args.authorized_by,
                        ("superseded by %s" % new_id) if new_id else "reverted")
@@ -1315,7 +1327,7 @@ def cmd_authority(tree, args):
     return 0
 
 
-# ---------------------------------------------------------------- authoring  dte:B26
+# ---------------------------------------------------------------- authoring  dte:B29
 
 CFG_TEMPLATE = """# DTE configuration. One key = value per line. Every key shown with its default.
 #
@@ -1388,7 +1400,7 @@ def split_ids(s):
 
 
 def cmd_new(tree, args):
-    """dte:B26"""
+    """dte:B29"""
     ring = args.ring.upper()
     if not re.match(r"^[A-Z]$", ring):
         print("ring must be a single letter A-Z")
@@ -1429,7 +1441,7 @@ def cmd_new(tree, args):
 
 
 def cmd_show(tree, args):
-    """dte:B26"""
+    """dte:B29"""
     tree.validate()
     i = args.id
     node = tree.nodes.get(i)
@@ -1488,7 +1500,7 @@ def cmd_show(tree, args):
 
 
 def cmd_find(tree, args):
-    """dte:B26"""
+    """dte:B29"""
     q = args.text.lower()
     n = 0
     for node in tree.ordered_nodes():
@@ -1515,7 +1527,7 @@ def cmd_find(tree, args):
 
 
 def cmd_ratify(tree, args):
-    """dte:B26, dte:B7"""
+    """dte:B29, dte:B7"""
     rc = 0
     for i in args.ids:
         rc = max(rc, ratify_one(tree, i, args.by))
@@ -1663,6 +1675,9 @@ def cmd_brief(tree, args):
     print("  3. Cite what your work serves: `python %s cite <file> <ID>`. Refer to every decision as ID plus its title." % tool)
     print("  4. Never change a decision made or ratified by a human. Before you finish, run")
     print("     `DTE_RING=%s python %s validate`; it must print OK." % (ring, tool))
+    print("  5. Before acting under a node marked unratified and not contested, run `python %s contest <ID>`" % tool)
+    print("     and follow it: build the alternatives, scope their cost, judge by the parents, record the verdict.")
+    print("     A contested or ratified node is settled: act on it and never re-ask (A7, B28).")
     print()
     print("Decisions above your ring that bind you%s (%d):" % (scope_note, len(above)))
     cur = None
@@ -1707,7 +1722,7 @@ def cmd_hook(tree, args):
 
 
 def cmd_reparent(tree, args):
-    """dte:B26, dte:B24 (orphans are fixed here, never by hand)"""
+    """dte:B29, dte:B24 (orphans are fixed here, never by hand)"""
     node = tree.nodes.get(args.id)
     if node is None:
         print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
@@ -1736,8 +1751,188 @@ def cmd_reparent(tree, args):
     return 0
 
 
+SETTABLE = ("title", "confidence")       # dte:B29 the fields with no invariant
+CONFIDENCES = ("low", "medium", "high")
+FIELD_OWNER = {                            # where a refused field is actually changed
+    "status": "retire, ratify, or move", "parents": "reparent", "supersedes": "retire --superseded-by",
+    "superseded_by": "retire --superseded-by", "conflicts_with": "conflict", "ratified_by": "ratify",
+    "authorized_by": "--authorized-by on retire, move, or set", "contested_by": "contest --record",
+    "id": "move", "made_by": "nothing: provenance is fixed at creation (A3)",
+    "by": "nothing: provenance is fixed at creation (A3)", "date": "nothing: provenance is fixed at creation (A3)",
+}
+
+
+def cmd_set(tree, args):
+    """dte:C18, dte:B29, dte:B11 (a change to a human-held node needs a human's name)"""
+    node = tree.nodes.get(args.id)
+    if node is None:
+        print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
+        return 2
+    field = args.field.strip().lower()
+    if field not in SETTABLE:
+        owner = FIELD_OWNER.get(field)
+        if owner:
+            print("%s is not set by hand; use %s  (B29)" % (field, owner))
+        else:
+            print("unknown field %s; set changes one of: %s  (B29)" % (field, ", ".join(SETTABLE)))
+        return 2
+    if not node.in_effect:
+        print("%s is %s; set a field on an in-effect node" % (args.id, node.status))
+        return 2
+    new = " ".join(args.value.split())
+    if not new:
+        print("the new value is empty")
+        return 2
+    old = node.title if field == "title" else (node.confidence or "")
+    if new == old:
+        print("%s already has %s = %s" % (args.id, field, new))
+        return 0
+    if field == "confidence" and new not in CONFIDENCES:
+        print("confidence is one of: %s" % ", ".join(CONFIDENCES))
+        return 2
+    if CONFIG["protect_human"] and node.human_held and not args.authorized_by:
+        print("%s is human-held; changing it needs --authorized-by <human>  (B11)" % args.id)
+        return 2
+    if field == "title" and len(new) > TITLE_MAX:
+        print("warning: title is %d characters; B16 asks for under %d" % (len(new), TITLE_MAX))
+    text = read_text(node.path)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    text = set_field(text, field, new)
+    if args.authorized_by:
+        text = set_field(text, "authorized_by", args.authorized_by)
+    text = append_history(text, '- %s %s changed from "%s" by %s%s.' % (
+        datetime.date.today().isoformat(), field, old or "(unset)", args.by,
+        (", authorized by " + args.authorized_by) if args.authorized_by else ""))
+    write_text(node.path, text.replace("\n", nl))
+    print('set %s %s: "%s" -> "%s"' % (args.id, field, old or "(unset)", new))
+    return 0
+
+
+def _section(body, heading):
+    """The lines under heading up to the next ## heading, or an empty string."""
+    lines = body.replace("\r\n", "\n").split("\n")
+    if heading not in lines:
+        return ""
+    i = lines.index(heading) + 1
+    j = next((k for k in range(i, len(lines)) if lines[k].startswith("## ")), len(lines))
+    return "\n".join(lines[i:j]).strip("\n")
+
+
+def _insert_section(text, heading, block):
+    """Append block under heading; create the section before History if it is absent."""
+    lines = text.rstrip("\n").split("\n")
+    if heading in lines:
+        i = lines.index(heading)
+        j = next((k for k in range(i + 1, len(lines)) if lines[k].startswith("## ")), len(lines))
+        while j > i + 1 and not lines[j - 1].strip():
+            j -= 1
+        lines[j:j] = [""] + block.split("\n")
+    elif "## History" in lines:
+        i = lines.index("## History")
+        lines[i:i] = [heading, ""] + block.split("\n") + [""]
+    else:
+        lines += ["", heading, ""] + block.split("\n")
+    return "\n".join(lines) + "\n"
+
+
+CONTEST_CHOICES = ("keep", "opposite", "deletion", "variant")
+
+
+def cmd_contest(tree, args):
+    """dte:C17, dte:B28 (one contest per unratified node, then it is settled)"""
+    tree.validate()
+    node = tree.nodes.get(args.id)
+    if node is None:
+        print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
+        return 2
+    if not node.in_effect:
+        print("%s is %s; only in-effect nodes are contested" % (args.id, node.status))
+        return 2
+    if node.human_held:
+        print("%s is human-held; a human-made or ratified node is settled and is never contested (B28)" % args.id)
+        return 2
+    if args.record:
+        return record_contest(tree, node, args)
+    if node.contested_by and not args.again:
+        print("%s was already contested by %s; it is settled until a human ratifies it or an agent"
+              " supersedes it (B28, A7)" % (args.id, node.contested_by))
+        print("  pass --again to run a second contest anyway")
+        return 2
+    cites = sorted({rel for rel, ln, cid, r in tree.citations if r == node.id})
+    kids = tree.children.get(node.id, [])
+    tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
+    print("CONTEST %s  dte:B28" % node.label())
+    print()
+    for line in node.body.strip().split("\n"):
+        print("  " + line)
+    print()
+    print("Rubric (the parents): read them, judge by them, never touch them.")
+    for p in node.parents:
+        print("  " + (tree.nodes[p].label() if p in tree.nodes else "%s (%s)" % (p, tree.retired_hint(p))))
+    if not node.parents:
+        print("  none: %s is a core node; the rubric is the project's purpose as the owner stated it" % node.id)
+    print()
+    print("Build each alternative far enough to scope its cost, then judge them against the rubric alone.")
+    print("Children of %s (%d) and artifacts citing it (%d) count for nothing: a better node may need none of them."
+          % (node.id, len(kids), len(cites)))
+    print("Do not reopen parents, siblings, or children in this contest.")
+    print()
+    print("  keep      %s as written" % node.id)
+    print("  opposite  the decision reversed")
+    print("  deletion  no node here; the parents alone must explain what %s explains" % node.id)
+    print("  variant   optional: a third way the rubric permits")
+    print()
+    print("Record the verdict and move on. The node is then settled until a human ratifies it (A7):")
+    print("  python %s contest %s --record --chosen <%s> --by <you> --note \"...\" [--file NOTES.md]"
+          % (tool, node.id, "|".join(CONTEST_CHOICES)))
+    print("If keep did not win: write the winner with `python %s new %s ...`, then"
+          " `python %s retire %s --by <you> [--superseded-by NEW]`." % (tool, node.ring, tool, node.id))
+    return 0
+
+
+def record_contest(tree, node, args):
+    """dte:C17"""
+    if not args.by:
+        print("--record needs --by <who judged>")
+        return 2
+    if not args.chosen:
+        print("--record needs --chosen <%s>" % "|".join(CONTEST_CHOICES))
+        return 2
+    note = ""
+    if args.file:
+        if not os.path.exists(args.file):
+            print("no such file: %s" % args.file)
+            return 2
+        note = read_text(args.file).replace("\r\n", "\n").strip()
+    if args.note:
+        note = (note + "\n\n" + args.note.strip()) if note else args.note.strip()
+    if not note:
+        print("--record needs --note or --file: the alternatives, their scoped costs, and why %s won" % args.chosen)
+        return 2
+    today = datetime.date.today().isoformat()
+    block = "### Contest %s by %s: %s wins\n\n%s" % (today, args.by, args.chosen, note)
+    text = read_text(node.path)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    text = text.replace("\r\n", "\n")
+    text = _insert_section(text, "## Alternatives considered", block)
+    text = set_field(text, "contested_by", args.by)
+    text = append_history(text, "- %s contested by %s; %s won." % (today, args.by, args.chosen))
+    write_text(node.path, text.replace("\n", nl))
+    tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
+    print('recorded contest on %s "%s": %s wins' % (node.id, node.title, args.chosen))
+    if args.chosen == "keep":
+        print("  %s is settled; act on it without re-asking until a human ratifies or supersedes it (A7, B28)" % node.id)
+    elif args.chosen == "deletion":
+        print("  next: python %s retire %s --by <you>   then reconcile what `blast %s` listed" % (tool, node.id, node.id))
+    else:
+        print("  next: python %s new %s --title ... --parents %s   then   python %s retire %s --by <you> --superseded-by NEW"
+              % (tool, node.ring, ",".join(node.parents), tool, node.id))
+    return 0
+
+
 def cmd_conflict(tree, args):
-    """dte:B26, dte:B4"""
+    """dte:B29, dte:B4"""
     a, b = args.a, args.b
     if a == b:
         print("a node cannot contradict itself")
@@ -1769,7 +1964,7 @@ def cmd_conflict(tree, args):
 
 
 def cmd_retired(tree, args):
-    """dte:B26, dte:C11"""
+    """dte:B29, dte:C11"""
     if not tree.retired:
         print("Ledger empty. Nothing has been retired.")
         return 0
@@ -1900,6 +2095,21 @@ def main(argv=None):
     rp.add_argument("id")
     rp.add_argument("--parents", required=True, help="comma-separated parent ids")
     rp.add_argument("--by", required=True)
+    st = sub.add_parser("set")
+    st.add_argument("id")
+    st.add_argument("field", help="one of: %s (B29); the body is edited by hand" % ", ".join(SETTABLE))
+    st.add_argument("value")
+    st.add_argument("--by", required=True)
+    st.add_argument("--authorized-by", dest="authorized_by", default=None,
+                    help="the human authorising a change to a human-held node (B11)")
+    ct = sub.add_parser("contest")
+    ct.add_argument("id")
+    ct.add_argument("--record", action="store_true", help="write the verdict instead of printing the brief")
+    ct.add_argument("--chosen", choices=CONTEST_CHOICES, default=None)
+    ct.add_argument("--by", default=None, help="who judged")
+    ct.add_argument("--note", default=None, help="the alternatives, their scoped costs, and the verdict")
+    ct.add_argument("--file", default=None, help="markdown file holding the same, appended before --note")
+    ct.add_argument("--again", action="store_true", help="contest a node that was already contested")
     cf = sub.add_parser("conflict")
     cf.add_argument("a")
     cf.add_argument("b")
@@ -1925,7 +2135,7 @@ def main(argv=None):
         "next": cmd_next, "scope": cmd_scope, "inbox": cmd_inbox, "place": cmd_place,
         "authority": cmd_authority, "move": cmd_move, "retire": cmd_retire,
         "new": cmd_new, "show": cmd_show, "find": cmd_find, "ratify": cmd_ratify,
-        "conflict": cmd_conflict, "reparent": cmd_reparent, "retired": cmd_retired, "export": cmd_export,
+        "conflict": cmd_conflict, "reparent": cmd_reparent, "set": cmd_set, "contest": cmd_contest, "retired": cmd_retired, "export": cmd_export,
         "init": cmd_init, "cite": cmd_cite, "brief": cmd_brief, "hook": cmd_hook,
     }[args.cmd](tree, args)
 

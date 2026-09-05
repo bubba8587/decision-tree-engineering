@@ -4,3 +4,5 @@ B5	2026-09-02	superseded	B24	Claude Fable 5.1	-	Nodes are never deleted; descend
 C10	2026-09-02	superseded	C11	Claude Fable 5.1	-	A deleted or renamed node file is a validation error whenever git can see it; the inbox is exempt
 B2	2026-09-02	superseded	B23	Claude Fable 5.1	-	The ID letter is the ring; moves assign a new ID and keep the old as an alias
 C4	2026-09-02	superseded	B22	Claude Fable 5.1	-	Coverage is a report, not a gate
+B26	2026-09-05	superseded	B29	Claude Fable 5.1	-	Every operation and every question in the spec has a dte command; agents never hand-edit frontmatter
+C16	2026-09-05	superseded	C18	Claude Fable 5.1	-	dte retitle rewords a title in place, records the old one in History, and guards human-held nodes
