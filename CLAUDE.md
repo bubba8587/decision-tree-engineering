@@ -130,8 +130,8 @@ artifact.
 
 ## Rings in this repo
 
-- `A` core goals. A1, A2, A5, A6, A7 are the owner's; A3 and A4 are proposed
-  and await ratification. Do not add to ring A. Inbox it and ask.
+- `A` core goals. A1, A2, A3, A5, A6, A7 are the owner's; A4 is proposed
+  and awaits ratification. Do not add to ring A. Inbox it and ask.
 - `B` format and rules of DTE itself.
 - `C` how the reference tool implements ring B.
 
