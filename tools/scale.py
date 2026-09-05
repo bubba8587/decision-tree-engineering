@@ -1,4 +1,4 @@
-"""Time every dte command on a synthetic tree of Solenoid-ish size.  dte:B6,C8
+"""Time every dte command on a synthetic tree of large-project size.  dte:B6,C8
 
 Run: python tools/scale.py [nodes-per-ring-scale]
 Builds a temporary git repo with rings A-D and thousands of citing files,

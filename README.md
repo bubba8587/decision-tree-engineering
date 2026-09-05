@@ -113,6 +113,6 @@ project.
 
 ## Status
 
-Day one. The A-ring is set (A1, A5, A6, A7 placed by the project owner; A2
-to A4 proposed and awaiting ratification). Rings B and C describe the format and tooling. First
-external target: Solenoid NGC.
+The A-ring is set and ratified by the project owner. Rings B and C describe
+the format and tooling and are being ratified one node at a time. The goal is
+a finished package that other repos and agents install in one step (dte:A4).
