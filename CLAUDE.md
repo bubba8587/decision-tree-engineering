@@ -35,7 +35,10 @@ permission is gone and the action becomes an inbox item instead.
 
 ## Before you change anything
 
-1. `python tools/dte.py tree` to see the current tree and the inbox, and
+1. `python tools/dte.py outbox` to see what the owner tagged or dropped in
+   the vault (B31 "the outbox is the human-to-agent channel: notes in
+   decisions/outbox, action tags, typed-in ratified_by"); process each item
+   first. Then `python tools/dte.py tree` to see the current tree and the inbox, and
    `python tools/dte.py show <ID>` to read any one decision without
    opening the file.
 2. If you are about to edit an existing node, run

@@ -714,7 +714,7 @@ class TestCiteBriefHook(Base):
         code, out = run(self.root, "set", "B1", "title", "A  new   title", "--by", "agent")
         self.assertEqual(code, 0, out)
         text = self._read("decisions/B/B1.md")
-        self.assertIn("title: A new title", text)
+        self.assertIn('title: "A new title"', text)   # titles are quoted YAML (dte:C1)
         self.assertIn("title changed from", text)
         code, out = run(self.root, "set", "B1", "confidence", "low", "--by", "agent")
         self.assertEqual(code, 0, out)
@@ -733,7 +733,7 @@ class TestCiteBriefHook(Base):
                         "--authorized-by", "owner")
         self.assertEqual(code, 0, out)
         text = self._read("decisions/B/B2.md")
-        self.assertIn("title: Reworded", text)
+        self.assertIn('title: "Reworded"', text)
         self.assertIn("authorized_by: owner", text)
         code, out = run(self.root, "set", "B9", "title", "x", "--by", "agent")
         self.assertEqual(code, 2)
@@ -858,3 +858,55 @@ class TestQueries(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVault(Base):
+    # dte:B30, dte:B31, dte:C19
+
+    def test_wikilink_parents_and_quoted_title_are_read(self):
+        write_node(self.root, id="C2", parents='"[[B1]]"', title='"colon: inside"', made_by="ai")
+        write_file(self.root, "src/w.py", "# [[C2]] and [[%s|text]]" % "B2" + chr(10))  # split: not a citation here
+        write_file(self.root, "decisions/.obsidian/app.json", "{}")
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        self.assertIn("C2 colon: inside", out)
+        tree = dte.Tree(self.root, os.path.join(self.root, "decisions"))
+        self.assertEqual(tree.nodes["C2"].parents, ["B1"])
+        code, out = run(self.root, "blast", "C2")
+        self.assertIn("src/w.py", out)
+
+    def test_links_wikilink_writes_that_form(self):
+        write_file(self.root, "dte.cfg", "links = wikilink\n")
+        code, out = run(self.root, "new", "C", "--title", "t: u", "--by", "agent", "--parents", "B1")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/C/C2.md")
+        self.assertIn('parents: ["[[B1]]"]', text)
+        self.assertIn('title: "t: u"', text)
+        code, out = run(self.root, "cite", os.path.join(self.root, "src", "none.py"), "C2")
+        self.assertEqual(code, 0, out)
+        self.assertIn("[[C2]]", self._read("src/none.py"))
+
+    def test_null_reads_as_empty_and_aliases_still_rejected(self):
+        p = self._read("decisions/B/B1.md")
+        write_file(self.root, "decisions/B/B1.md", p.replace("ratified_by: ", "ratified_by: null"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        write_file(self.root, "decisions/B/B1.md", p.replace("made_by:", "aliases: [x]\nmade_by:"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 1)
+
+    def test_outbox_lists_notes_and_tags_and_done_clears(self):
+        write_file(self.root, "decisions/outbox/idea.md", "# Split B2\n\nplease\n")
+        p = self._read("decisions/B/B1.md")
+        write_file(self.root, "decisions/B/B1.md", p.replace("made_by:", "tags: [ratify]\nmade_by:"))
+        code, out = run(self.root, "outbox")
+        self.assertEqual(code, 0)
+        self.assertIn("Split B2", out)
+        self.assertIn("#ratify", out)
+        code, out = run(self.root, "validate")
+        self.assertIn("OUTBOX (2)", out)
+        run(self.root, "outbox", "--done", "idea")
+        run(self.root, "outbox", "--done", "B1")
+        code, out = run(self.root, "outbox")
+        self.assertIn("Outbox empty", out)
+        self.assertNotIn("tags:", self._read("decisions/B/B1.md"))

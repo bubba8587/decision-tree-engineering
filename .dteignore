@@ -4,3 +4,7 @@
 *.lock
 # WALKTHROUGH.md is a transcript of a toy project; its dte: tokens belong to that tree, not this one.
 WALKTHROUGH.md
+# External-user feedback log, not a DTE artifact serving a decision.
+FEEDBACK.md
+# Vault schema copied from Solenoid for the upgrade; reference only.
+OBSIDIAN-VAULT.md

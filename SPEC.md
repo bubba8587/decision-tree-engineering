@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B29,B27 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B29,B27,B30,B31,C19 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -40,6 +40,8 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
   deeper and asks upward for anything shallower (dte:A6).
 - **Inbox**: where a decision waits, without an ID, until someone with
   authority places it in a ring (dte:B14).
+- **Outbox**: the human-to-agent channel: a note in `decisions/outbox/`, an
+  action tag on a node, or a `ratified_by` typed in by hand (dte:B31).
 - **Summary**: the node's `title`, which always accompanies its ID when a
   model refers to it (dte:A5, dte:B16).
 - **Ledger**: `decisions/RETIRED`, one line per retired node. Burns the
@@ -68,7 +70,7 @@ here is supported (dte:C1): scalars, inline lists `[a, b]`, and block lists.
 ```yaml
 ---
 id: B3
-title: Artifacts cite decisions with a dte: token
+title: "Artifacts cite decisions with a dte: token"   # free text is double-quoted (dte:B30)
 status: active            # proposed | active | superseded | reverted
 parents: [A1, A2]         # required unless ring A; each must be shallower
 supersedes: []            # nodes this one replaces (they become superseded)
@@ -86,6 +88,13 @@ confidence: high          # low | medium | high (optional)
 
 `title` is the summary string (dte:A5). Write it as the decision in one
 sentence, under 100 characters, so it can stand beside the ID in chat.
+
+With `links = wikilink` (dte:B30) the link fields are written as quoted
+wikilinks, `parents: ["[[A1]]", "[[A2]]"]`, so Obsidian draws them as
+edges; the tool reads both spellings whatever the setting. `tags` and
+`cssclasses` are accepted as Obsidian's own keys; `null` and `~` read as
+empty; `aliases` is still an error (dte:B23). Dot-directories under
+`decisions/` (`.obsidian`) are ignored, so the directory opens as a vault.
 
 Body sections, in this order. Only **Decision** and **Why** are required.
 
@@ -119,6 +128,9 @@ Optional. One line per event: created, ratified, moved, superseded.
 
 - Token: `dte:` immediately followed by one or more IDs separated by commas.
   Examples: `dte:B3`, `dte:B6,C1`. Case-sensitive. No spaces before the ID.
+- Wikilink: `[[B3]]` or `[[B3|text]]` is the same citation in Obsidian's
+  spelling (dte:B30, dte:C19). Both forms are read everywhere; `links` in
+  `dte.cfg` picks which one the tool writes.
 - Place it in a comment for code, or in prose or an HTML comment for docs.
   A file-level citation at the top says why the file exists. Line-level
   citations say why a specific block exists.
@@ -127,7 +139,8 @@ Optional. One line per event: created, ratified, moved, superseded.
   means "this exists straight from the core goal".
 - Citing an unknown ID is an error. Citing a superseded or reverted node is
   a warning: the artifact was built under a decision that no longer stands.
-- Nodes do not use citation tokens for lineage; they use `parents:`.
+- Nodes do not use citation tokens for lineage; they use `parents:`. A
+  `[[ID]]` in a node's prose is a link for the reader, not lineage.
 
 ## 6. Rules
 
@@ -249,6 +262,15 @@ parents: [A1]             # candidate parents, optional
 Then say so in chat, with the title. Validate and tree print PENDING
 PLACEMENT with the question to ask until it is placed.
 
+**Outbox (dte:B31).** A human directs agents from inside the vault without
+the CLI: drop a note in `decisions/outbox/` (any shape; title from
+frontmatter, first heading, or file name), put `ratify`, `retire`, `contest`
+or `ask` in a node's `tags` property or inline as `#ask`, or type a name
+into `ratified_by`. `dte outbox` lists every item with the command that
+processes it; `dte outbox --done <ID|slug>` removes the note or strips the
+tags; `validate` prints `OUTBOX (n)` until the list is empty. A bare edit
+with no tag is not an outbox item: validate's changed-nodes list covers it.
+
 **Place (dte:B14).** Someone with authority runs
 `dte place <slug> <ring> --by <name> [--parents A1,B2]`. The tool allocates
 the ID, writes the node into the ring with a History line, and removes the
@@ -316,6 +338,7 @@ may decide at any ring; a human-made node is valid anywhere.
 | `broad_fraction`| `0.3`   | share of nodes or artifacts that makes a node broad (C8) |
 | `broad_min`     | `5`     | minimum count before the share is considered (C8) |
 | `retire`        | `delete`| `delete` removes retired files (needs git); `keep` sets status (B24) |
+| `links`         | `token` | `token` writes `dte:ID`; `wikilink` writes `[[ID]]` for Obsidian (B30, C19) |
 
 ## 12. Scope checks (dte:B21, dte:C8)
 
@@ -344,7 +367,7 @@ runtime, and implements (dte:B29): asking the tree with `show`, `find`,
 `tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`,
 `scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it
 with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18), `contest` (dte:C17), `move`,
-`retire`, `inbox`, `place`; and `validate` (with `--as`, defaulting to `$DTE_RING`),
+`retire`, `inbox`, `outbox` (dte:B31), `place`; and `validate` (with `--as`, defaulting to `$DTE_RING`),
 `export` (JSON: nodes, citations, ledger, inbox; the join surface for
 structural tools, dte:C12), `init` (scaffold, dte:C13), and `hook`
 (pre-commit validate, dte:C14).

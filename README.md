@@ -47,7 +47,9 @@ date: 2026-09-02
 ---
 ```
 
-Any artifact cites a decision with the token `dte:ID` in a comment or in prose.
+Any artifact cites a decision with the token `dte:ID` in a comment or in prose,
+or as `[[ID]]` when `links = wikilink` is set; `decisions/` then opens directly
+as an Obsidian vault with lineage as graph edges (dte:B30).
 
 ## Ask the tree
 
@@ -76,6 +78,7 @@ python tools/dte.py contest B3 --record --chosen keep --by agent --note "..."
 python tools/dte.py move C4 B --by owner              # promote: new id, old retired, references rewritten
 python tools/dte.py retire B5 --by owner --superseded-by B24   # retire through the ledger
 python tools/dte.py inbox / place <slug> B --by owner # escalation and placement
+python tools/dte.py outbox [--done <ID|note>]  # what the human tagged or dropped in the vault (dte:B31)
 
 # check and integrate
 python tools/dte.py validate --as C   # consistency; as an agent at ring C, did I overstep?
