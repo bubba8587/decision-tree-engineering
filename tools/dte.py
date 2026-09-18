@@ -2794,8 +2794,9 @@ def cmd_vendor(tree, args):
     dest = os.path.join(tree.root, args.dir)
     os.makedirs(dest, exist_ok=True)
     tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
-    stamp = "<!-- vendored from DTE %s on %s. Do not edit; refresh with: python %s vendor --from %s -->\n\n" % (
-        _source_commit(src), datetime.date.today().isoformat(), tool, args.src.replace(os.sep, "/"))
+    # no source path in the stamp: an absolute path would carry the user's home directory into the adopter's repo
+    stamp = "<!-- vendored from DTE %s on %s. Do not edit; refresh with: python %s vendor --from <your DTE checkout> -->\n\n" % (
+        _source_commit(src), datetime.date.today().isoformat(), tool)
     written = []
     for f in VENDOR_FILES:
         write_text(os.path.join(dest, f), stamp + read_text(os.path.join(src, f)))

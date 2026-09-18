@@ -1051,6 +1051,7 @@ class TestFeedbackRound(Base):
             text = self._read("vendor/dte/" + f)
             self.assertTrue(text.startswith("<!-- vendored from DTE "), f)
         dec = self._read("vendor/dte/DECISIONS.md")
+        self.assertNotIn(os.path.abspath(os.path.join(HERE, "..")), dec)   # no local path in what ships
         self.assertIn("## Ring A", dec)
         self.assertIn("B39 vendoredRules", dec)
         self.assertIn("**Decision.**", dec)
