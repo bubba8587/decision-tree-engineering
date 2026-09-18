@@ -117,8 +117,14 @@ contest weighs it as the thinner claim.
 What this makes true for the rings below and for artifacts.
 
 ## Alternatives considered
-Optional. A contest (dte:B28) records its verdict here. It informs the
-ratification and `ratify` deletes it (dte:B41); git keeps the text.
+Optional. A terse list of the other ways this could have gone, one line
+each. It stays; it is part of what the decision means.
+
+## Contest
+Optional. A contest (dte:B28) records its rubric, the keep, opposite,
+deletion and variant cases with their scoped costs, and the verdict here.
+It informs the ratification and `ratify` deletes it (dte:B41); git keeps
+the text.
 
 ## History
 Optional. One line per event: created, ratified, moved, reworded,
@@ -268,10 +274,10 @@ Provenance fields are never changed after creation (dte:A3). The old value
 goes to History.
 
 **Ratify.** `dte ratify <ID> --by <human>` sets `ratified_by`, flips
-`proposed` to `active`, drops `## Alternatives considered` and logs the
-drop in one History line (dte:B41). A ratified node is human-held from
-then on (dte:B11). `validate` warns when a ratified node still carries
-the section.
+`proposed` to `active`, drops `## Contest` and logs the drop in one
+History line (dte:B41). `## Alternatives considered` stays. A ratified
+node is human-held from then on (dte:B11). `validate` warns when a
+ratified node still carries a Contest section.
 
 **Authorize (dte:C21).** `dte authorize <ID> --by <human> [--note ...]`
 records a human's go-ahead on a node that already exists: `authorized_by`

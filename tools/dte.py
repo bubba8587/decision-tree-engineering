@@ -567,8 +567,8 @@ class Tree:
                 E.append("%s: body needs '## Decision' and '## Why' sections" % i)
             if re.search(r"^TODO$", node.body, re.M):
                 W.append("%s: body still has a TODO placeholder; finish it" % i)
-            if node.ratified_by and "## Alternatives considered" in node.body.split("\n"):   # dte:B41
-                W.append("%s: ratified but still carries '## Alternatives considered'; a ratified node is present governance, drop it" % i)
+            if node.ratified_by and "## Contest" in node.body.split("\n"):   # dte:B41
+                W.append("%s: ratified but still carries '## Contest'; a ratified node is present governance, drop it" % i)
             # R1 parents  dte:B10
             if node.ring == "A" and node.parents:
                 E.append("%s: core (A) nodes cannot have parents" % i)
@@ -1447,7 +1447,7 @@ def write_text(path, text):
 
 
 def append_history(text, note):
-    if "## History" in text:
+    if re.search(r"^## History\s*$", text, re.M):
         return text.rstrip("\n") + "\n" + note + "\n"
     return text.rstrip("\n") + "\n\n## History\n\n" + note + "\n"
 
@@ -1525,9 +1525,9 @@ def cmd_retire(tree, args):
         t = t.replace("\r\n", "\n")
         if old_id not in new.supersedes:
             t = set_field(t, "supersedes", fm_ids(new.supersedes + [old_id]))
-        carried = _section(node.body, "## Alternatives considered") if node.contested_by else ""
+        carried = _section(node.body, "## Contest") if node.contested_by else ""
         if carried:   # dte:C17,C22 the contest that produced the successor travels with it, and settles it
-            t = _insert_section(t, "## Alternatives considered",
+            t = _insert_section(t, "## Contest",
                                 "Carried from %s, which this node supersedes.\n\n%s" % (old_id, carried))
             if not new.contested_by:
                 t = set_field(t, "contested_by", node.contested_by)
@@ -2086,18 +2086,18 @@ def ratify_one(tree, i, by):
     flipped = node.status == "proposed"
     if flipped:
         text = set_field(text, "status", "active")
-    dropped = "## Alternatives considered" in text.split("\n")
+    dropped = "## Contest" in text.split("\n")
     if dropped:   # dte:B41: the contest informed the ruling; git keeps it
-        text = _drop_section(text, "## Alternatives considered")
+        text = _drop_section(text, "## Contest")
     text = append_history(text, "- %s ratified by %s%s%s." % (
         datetime.date.today().isoformat(), by, " (proposed -> active)" if flipped else "",
-        "; alternatives considered dropped, see git" if dropped else ""))
+        "; contest section dropped, see git" if dropped else ""))
     write_text(node.path, text.replace("\n", nl))
     print('ratified %s "%s" by %s%s' % (i, node.summary, by,
                                         "; status proposed -> active" if flipped else ""))
     print("  it is now human-held (B11)")
     if dropped:
-        print("  alternatives considered dropped (B41); the commit before this one keeps them")
+        print("  contest section dropped (B41); the commit before this one keeps it")
     return 0
 
 
@@ -2493,7 +2493,7 @@ def record_contest(tree, node, args):
     text = read_text(node.path)
     nl = "\r\n" if "\r\n" in text else "\n"
     text = text.replace("\r\n", "\n")
-    text = _insert_section(text, "## Alternatives considered", block)
+    text = _insert_section(text, "## Contest", block)
     text = set_field(text, "contested_by", args.by)
     text = append_history(text, "- %s contested by %s; %s won." % (today, args.by, args.chosen))
     write_text(node.path, text.replace("\n", nl))
