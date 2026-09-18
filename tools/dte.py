@@ -821,7 +821,8 @@ class Tree:
             old = self.node_at_head(rel)
             if old is None:
                 continue
-            strip = lambda b: re.sub(r"\n## History\n.*", "", b.replace("\r\n", "\n"), flags=re.S).strip()
+            # whitespace-insensitive: a reflow for the reading surface is not a body edit (B36)
+            strip = lambda b: re.sub(r"\s+", " ", re.sub(r"\n## History\n.*", "", b.replace("\r\n", "\n"), flags=re.S)).strip()
             if strip(old.body) != strip(node.body):
                 hist = lambda b: [l for l in b.replace("\r\n", "\n").split("\n") if l.startswith("- ")]
                 old_h = _section(old.body, "## History")

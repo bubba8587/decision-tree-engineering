@@ -1095,6 +1095,13 @@ class TestFeedbackRound(Base):
         out = dte.append_history(text, "- 2026-09-18 x.")
         self.assertIn("\n## History\n\n- 2026-09-18 x.\n", out)
 
+    def test_reflowed_body_is_not_a_body_change(self):
+        self._init_repo()
+        p = "decisions/B/B1.md"
+        write_file(self.root, p, self._read(p).replace("## Decision\nx", "## Decision\n\nx"))
+        code, out = run(self.root, "validate")
+        self.assertNotIn("[body changed", out)
+
     def test_init_ignores_the_tool(self):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)

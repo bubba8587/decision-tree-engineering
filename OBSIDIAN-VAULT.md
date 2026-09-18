@@ -1,7 +1,6 @@
 # Obsidian vault schema, copied from the Solenoid adoption (2026-09-18)
 
-Reference material for the DTE upgrade driven by FEEDBACK.md. Not a decision node;
-excluded from the scanner via `.dteignore`. Delete once the upgrade lands.
+Reference material for the DTE upgrade driven by FEEDBACK.md. Not a decision node; excluded from the scanner via `.dteignore`. Delete once the upgrade lands.
 
 Solenoid opens `decisions/` as the vault root. Layout observed:
 

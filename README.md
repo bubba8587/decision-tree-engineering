@@ -1,20 +1,11 @@
 <!-- dte:A1,A2,A3,A4,A5,A6,A7 -->
 # Decision Tree Engineering (DTE)
 
-**Every thing in a project exists because a decision was made.** DTE makes that
-lineage explicit, ring by ring, so that when a decision changes you know exactly
-what it touches.
+**Every thing in a project exists because a decision was made.** DTE makes that lineage explicit, ring by ring, so that when a decision changes you know exactly what it touches.
 
-Think of a tree: the core is a handful of abstract goals (ring `A`). Each
-ring outward is a layer of decisions made *because of* the ring inside it.
-Code, config, docs and tests are the leaves and bark. Each one cites the
-decision(s) it exists to serve.
+Think of a tree: the core is a handful of abstract goals (ring `A`). Each ring outward is a layer of decisions made *because of* the ring inside it. Code, config, docs and tests are the leaves and bark. Each one cites the decision(s) it exists to serve.
 
-DTE works **alongside** structural methods such as graph engineering. A
-dependency graph tells you *what* touches *what*. The decision tree tells you
-*why* any of it is there, and who decided. It is traceability for rationale:
-from any decision to every spec, test, file and instruction that serves it,
-and back.
+DTE works **alongside** structural methods such as graph engineering. A dependency graph tells you *what* touches *what*. The decision tree tells you *why* any of it is there, and who decided. It is traceability for rationale: from any decision to every spec, test, file and instruction that serves it, and back.
 
 ## The one rule that matters (A1)
 
@@ -49,10 +40,7 @@ date: 2026-09-02
 ---
 ```
 
-Any artifact cites a decision with the token `dte:ID` in a comment or in prose,
-or as `[[ID]]` when `links = wikilink` is set; `decisions/` then opens directly
-as an Obsidian vault with lineage as graph edges (dte:B30). Every node has a
-camelCase `name` beside its `title`; chat says `ID name` (dte:A5, dte:B32).
+Any artifact cites a decision with the token `dte:ID` in a comment or in prose, or as `[[ID]]` when `links = wikilink` is set; `decisions/` then opens directly as an Obsidian vault with lineage as graph edges (dte:B30). Every node has a camelCase `name` beside its `title`; chat says `ID name` (dte:A5, dte:B32).
 
 ## Ask the tree
 
@@ -97,21 +85,12 @@ python tools/dte.py hook              # pre-commit: refuse commits that break th
 
 Two more rules the tool enforces, both from the core:
 
-- **Authority follows ring** (A6). An agent decides at its ring or deeper.
-  Anything shallower, or of unclear ring, goes to `decisions/inbox/` without
-  an ID, and the tool prints "ask so-and-so where this belongs" until a
-  person or a higher agent places it. The map in `dte.cfg` says who holds
-  each ring. It binds agents, never humans.
-- **Human-held decisions are protected** (B11). A node a human made or
-  ratified cannot be superseded, reverted, or moved without `authorized_by`
-  naming a human. DTE supplies the flag; honouring it is on the model.
+- **Authority follows ring** (A6). An agent decides at its ring or deeper. Anything shallower, or of unclear ring, goes to `decisions/inbox/` without an ID, and the tool prints "ask so-and-so where this belongs" until a person or a higher agent places it. The map in `dte.cfg` says who holds each ring. It binds agents, never humans.
+- **Human-held decisions are protected** (B11). A node a human made or ratified cannot be superseded, reverted, or moved without `authorized_by` naming a human. DTE supplies the flag; honouring it is on the model.
 
-And one rule for talking about the tree (A5): a decision is always referred
-to by ID *and* its title, never a bare "A4". The reader does not have the
-file open.
+And one rule for talking about the tree (A5): a decision is always referred to by ID *and* its title, never a bare "A4". The reader does not have the file open.
 
-The tool is one file with no dependencies (Python 3.8+). Copy it into any
-project.
+The tool is one file with no dependencies (Python 3.8+). Copy it into any project.
 
 ## Read next
 
@@ -123,6 +102,4 @@ project.
 
 ## Status
 
-The A-ring is set and ratified by the project owner. Rings B and C describe
-the format and tooling and are being ratified one node at a time. The goal is
-a finished package that other repos and agents install in one step (dte:A4).
+The A-ring is set and ratified by the project owner. Rings B and C describe the format and tooling and are being ratified one node at a time. The goal is a finished package that other repos and agents install in one step (dte:A4).
