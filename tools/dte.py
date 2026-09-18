@@ -987,8 +987,50 @@ def print_changed_nodes(tree):
         print("  %s%s" % (n.label(), note))
 
 
+def comment_census(tree):
+    """Per code-layer file: (comment lines, citation lines).  A heuristic for B38: files
+    heavy in prose comments and light in citations are where WHY still lives in the code."""
+    tree.scan()
+    cited = defaultdict(int)
+    for rel, _, _, _ in tree.citations:
+        cited[rel] += 1
+    out = []
+    for rel in tree.scanned_files:
+        if tree.layer_of(rel) != "code":
+            continue
+        ext = os.path.splitext(rel)[1].lower()
+        if ext in NO_COMMENTS:
+            continue
+        marker = next((m for m, exts in COMMENT_STYLES if ext in exts), "#")
+        n = 0
+        try:
+            with open(os.path.join(tree.root, rel), encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    s = line.strip()
+                    if s.startswith(marker) or (marker == "/*" and s.startswith("*")):
+                        n += 1
+        except OSError:
+            continue
+        out.append((rel, n, cited[rel]))
+    return out
+
+
+COMMENT_HEAVY = 5
+
+
 def cmd_scope(tree, args):
-    """dte:B21"""
+    """dte:B21, dte:B38"""
+    if getattr(args, "comments", False):
+        rows = [(rel, n, c) for rel, n, c in comment_census(tree) if n >= COMMENT_HEAVY and c == 0]
+        rows.sort(key=lambda r: -r[1])
+        if not rows:
+            print("No migration candidates: every file with %d+ comment lines carries a citation." % COMMENT_HEAVY)
+            return 0
+        print("MIGRATION CANDIDATES (%d): comment-heavy files with no citation (B38)" % len(rows))
+        for rel, n, _ in rows:
+            print("  %-50s %4d comment lines" % (rel, n))
+        print("\nWHY comments move into a node's Why; HOW into a spec; WHAT stays. A heuristic, not a finding.")
+        return 0
     F = tree.scope_findings()
     if not F:
         print("No scope findings.")
@@ -2605,7 +2647,8 @@ def main(argv=None):
     sub.add_parser("conflicts")
     sub.add_parser("coverage")
     sub.add_parser("next").add_argument("ring")
-    sub.add_parser("scope")
+    sub.add_parser("scope").add_argument("--comments", action="store_true",
+                                          help="list comment-heavy files with no citation (B38)")
     sub.add_parser("inbox")
     ob = sub.add_parser("outbox")
     ob.add_argument("--done", default=None, metavar="ID|slug", help="clear one processed item")

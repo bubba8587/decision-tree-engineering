@@ -141,6 +141,10 @@ Optional. One line per event: created, ratified, moved, superseded.
 - Place it in a comment for code, or in prose or an HTML comment for docs.
   A file-level citation at the top says why the file exists. Line-level
   citations say why a specific block exists.
+- A citation replaces the comment that held the reason (dte:B38). WHY
+  prose lives in the node, HOW prose in a spec, and a code comment says
+  WHAT the block is and does. The tool's `scope --comments` lists
+  comment-heavy files with no citation as migration candidates.
 - Citing a node implicitly cites its whole ancestry. Cite the *most specific*
   node that explains the artifact. Citing an `A` node directly is allowed and
   means "this exists straight from the core goal".

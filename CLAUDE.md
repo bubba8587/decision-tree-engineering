@@ -55,6 +55,11 @@ permission is gone and the action becomes an inbox item instead.
   `python tools/dte.py cite <file> <ID>` puts it at the top in the right
   comment syntax; line-level citations are written by hand. Cite the most
   specific node that explains it.
+- A citation replaces a WHY comment, it does not sit beside one. Move the
+  reason into the node's Why, move a HOW explanation into the spec when one
+  exists, and leave only WHAT the block does in the code (B38
+  commentsMigrate). `python tools/dte.py scope --comments` shows where to
+  start.
 - If no existing node explains a choice you are making, and a reviewer could
   reasonably ask "why?", that is a new decision. Decide where it belongs:
   - **At your ring or deeper**: create it with

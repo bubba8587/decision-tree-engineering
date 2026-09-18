@@ -1033,6 +1033,17 @@ class TestFeedbackRound(Base):
         code, out = run(self.root, "scope")
         self.assertNotIn("B2", out)   # instructed by CLAUDE.md counts as reach (K9)
 
+    def test_scope_comments_lists_migration_candidates(self):
+        write_file(self.root, "src/heavy.py", "".join("# because reasons %d\n" % i for i in range(6)) + "x = 1\n")
+        write_file(self.root, "src/cited.py", "# " + "dte" + ":C1\n" + "".join("# note %d\n" % i for i in range(6)))
+        write_file(self.root, "src/light.py", "# one\nx = 1\n")
+        code, out = run(self.root, "scope", "--comments")
+        self.assertEqual(code, 0, out)
+        self.assertIn("MIGRATION CANDIDATES (1)", out)
+        self.assertIn("src/heavy.py", out)
+        self.assertNotIn("cited.py", out)
+        self.assertNotIn("light.py", out)
+
     def test_init_ignores_the_tool(self):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)

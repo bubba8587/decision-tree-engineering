@@ -48,9 +48,13 @@ Pick one subsystem the team understands well. For it:
   source already records, then `dte import <dir> --by <you>` (B33). Nothing
   is contested at import; a lifted node owes its contest when something is
   first built under it.
-- A comment that explains *why* is a decision's rationale in the wrong
-  place. Move it into the node's Why and leave `dte:ID` behind. Comments
-  that explain *how* stay.
+- Comments split three ways (B38 commentsMigrate). A comment that explains
+  *why* is a decision's rationale in the wrong home: move it into the node's
+  Why and leave `dte:ID` behind. A comment that explains *how* beyond what
+  the block literally does belongs in a spec, if the project keeps one, and
+  the code cites the node the spec serves. A comment that says *what* the
+  block is and is doing stays. `dte scope --comments` lists comment-heavy
+  files with no citation, a place to start.
 - When the tree disagrees with the code, that is a finding. Either the code
   drifted (fix it, citing the node) or the decision changed silently (write
   the superseding node, retire the old one, walk the orphans).
