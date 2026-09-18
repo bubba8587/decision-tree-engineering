@@ -71,9 +71,10 @@ Body sections, in this order. Only **Decision** and **Why** are required.
 One or two sentences. The thing that was decided, stated so it can be cited.
 
 ## Why
-The reasoning. What the parents demanded, what was traded off. If a concrete
-incident forced this decision, say so in the first sentence; there is no
-field for it (dte:B40). A Why with no incident is preventive judgment, and a
+The reasoning only: what the parents demanded, what was traded off. No
+dates, no account of who said what when; history that matters is a History
+line (dte:B41). If a concrete incident forced this decision, say so in the
+first sentence; there is no field for it (dte:B40). A Why with no incident is preventive judgment, and a
 contest weighs it as the thinner claim.
 
 ## Consequences

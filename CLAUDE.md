@@ -64,4 +64,4 @@ Every time you tell the owner that something now exists or was built, name the d
 ## Conventions
 
 - Python 3.8+, standard library only, one file for the tool (B6).
-- Keep prose short. The Why section carries the argument; the Decision section is one or two citable sentences.
+- Keep prose short. The Why section carries the argument and nothing else: no dates, no who-said-what, no adoption story; that goes to History if it matters at all (B41 presentGovernance). The Decision section is one or two citable sentences.
