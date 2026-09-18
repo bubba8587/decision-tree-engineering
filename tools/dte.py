@@ -567,6 +567,8 @@ class Tree:
                 E.append("%s: body needs '## Decision' and '## Why' sections" % i)
             if re.search(r"^TODO$", node.body, re.M):
                 W.append("%s: body still has a TODO placeholder; finish it" % i)
+            if node.ratified_by and "## Alternatives considered" in node.body.split("\n"):   # dte:B41
+                W.append("%s: ratified but still carries '## Alternatives considered'; a ratified node is present governance, drop it" % i)
             # R1 parents  dte:B10
             if node.ring == "A" and node.parents:
                 E.append("%s: core (A) nodes cannot have parents" % i)
@@ -2084,12 +2086,18 @@ def ratify_one(tree, i, by):
     flipped = node.status == "proposed"
     if flipped:
         text = set_field(text, "status", "active")
-    text = append_history(text, "- %s ratified by %s%s." % (
-        datetime.date.today().isoformat(), by, " (proposed -> active)" if flipped else ""))
+    dropped = "## Alternatives considered" in text.split("\n")
+    if dropped:   # dte:B41: the contest informed the ruling; git keeps it
+        text = _drop_section(text, "## Alternatives considered")
+    text = append_history(text, "- %s ratified by %s%s%s." % (
+        datetime.date.today().isoformat(), by, " (proposed -> active)" if flipped else "",
+        "; alternatives considered dropped, see git" if dropped else ""))
     write_text(node.path, text.replace("\n", nl))
     print('ratified %s "%s" by %s%s' % (i, node.summary, by,
                                         "; status proposed -> active" if flipped else ""))
     print("  it is now human-held (B11)")
+    if dropped:
+        print("  alternatives considered dropped (B41); the commit before this one keeps them")
     return 0
 
 
@@ -2370,6 +2378,21 @@ def _section(body, heading):
     i = lines.index(heading) + 1
     j = next((k for k in range(i, len(lines)) if lines[k].startswith("## ")), len(lines))
     return "\n".join(lines[i:j]).strip("\n")
+
+
+def _drop_section(text, heading):
+    """Remove heading and its lines up to the next ## heading; text unchanged if absent."""
+    lines = text.rstrip("\n").split("\n")
+    if heading not in lines:
+        return text
+    i = lines.index(heading)
+    j = next((k for k in range(i + 1, len(lines)) if lines[k].startswith("## ")), len(lines))
+    while i > 0 and not lines[i - 1].strip():
+        i -= 1
+    del lines[i:j]
+    if lines and lines[-1].strip():
+        pass
+    return "\n".join(lines).rstrip("\n") + "\n"
 
 
 def _insert_section(text, heading, block):

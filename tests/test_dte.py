@@ -1075,6 +1075,20 @@ class TestFeedbackRound(Base):
         self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
         self.assertIn(b"arrows", r.stdout)
 
+    def test_ratify_drops_alternatives_and_validate_warns_if_kept(self):
+        p = "decisions/B/B1.md"
+        write_file(self.root, p, self._read(p) + "\n## Alternatives considered\n\n- keep: won\n- opposite: lost\n\n## History\n\n- 2026-09-02 created.\n")
+        code, out = run(self.root, "ratify", "B1", "--by", "owner")
+        self.assertEqual(code, 0, out)
+        text = self._read(p)
+        self.assertNotIn("Alternatives considered", text.split("## History")[0])
+        self.assertNotIn("opposite: lost", text)
+        self.assertIn("ratified by owner; alternatives considered dropped", text)
+        self.assertIn("- 2026-09-02 created.", text)
+        write_file(self.root, p, text + "\n## Alternatives considered\n\n- back again\n")
+        code, out = run(self.root, "validate")
+        self.assertIn("ratified but still carries", out)
+
     def test_init_ignores_the_tool(self):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)
