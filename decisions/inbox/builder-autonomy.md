@@ -1,0 +1,26 @@
+---
+name: builderAutonomy
+title: A builder agent works autonomously from the spec alone; it holds no ring, sees no tree, and decides nothing
+proposed_ring: A
+ask: human
+made_by: ai
+by: Claude Fable 5.1
+date: 2026-09-18
+parents: []
+confidence: medium
+---
+
+## Decision
+
+The layers exist so that building can be autonomous. An agent handed a spec builds to it precisely, cites the nodes the spec names, decides nothing and contests nothing; when the spec does not cover something it stops and reports the gap rather than improvising. Such a builder holds no ring and is not given the tree. Deciding belongs to humans and to agents that hold a ring and work on the tree or on a spec. These are modes of work, not fixed kinds of agent: the same agent may hold a ring in one session and build in another, and a project may run with no builder at all. What makes a builder is the absence of the tree.
+
+## Why
+
+Spec separation exists to unlock agent autonomy. A builder that reads only the spec has no reason to question anything in it, because every decision the spec embodies was settled before the spec was written. Withholding the tree is what makes that autonomy safe: the builder cannot be tempted by an unratified node it happened to read, and there is nothing for it to re-ask (A7). Framing this as a permanent split into two kinds of agent would over-constrain a small project where one agent does both; the invariant is about what an agent has in front of it while building, not about roles.
+
+## Consequences
+
+- `dte brief` gains a builder form: the spec, the citation rule, and how to report a gap; no binding nodes, no DTE_RING.
+- B28 oneContest binds agents that hold a ring; a builder owes no contest because it never acts under a node, only under a spec.
+- A spec gap is an inbox kind addressed to whoever holds the spec, distinct from a decision awaiting placement.
+- CLAUDE.md is the protocol for an agent with the tree; a builder gets its own instruction block.
