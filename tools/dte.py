@@ -2844,4 +2844,8 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # Windows consoles default to cp1252; a node body with an arrow must not crash show.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     sys.exit(main())

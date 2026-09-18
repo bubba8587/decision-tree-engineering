@@ -1066,6 +1066,15 @@ class TestFeedbackRound(Base):
         self.assertEqual(code, 0, out)
         self.assertIn("names none is", out)
 
+    def test_show_survives_a_non_cp1252_character_on_a_narrow_console(self):
+        write_node(self.root, id="C2", parents="B1", title="arrows")
+        write_file(self.root, "decisions/C/C2.md", self._read("decisions/C/C2.md").replace("## Decision\nx", "## Decision\na \u2192 b"))
+        env = dict(os.environ, PYTHONIOENCODING="cp1252")
+        r = subprocess.run([sys.executable, os.path.join(HERE, "..", "tools", "dte.py"), "--root", self.root, "show", "C2"],
+                           capture_output=True, env=env)
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+        self.assertIn(b"arrows", r.stdout)
+
     def test_init_ignores_the_tool(self):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)
