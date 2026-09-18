@@ -1044,6 +1044,23 @@ class TestFeedbackRound(Base):
         self.assertNotIn("cited.py", out)
         self.assertNotIn("light.py", out)
 
+    def test_vendor_copies_rules_renders_decisions_and_ignores_them(self):
+        code, out = run(self.root, "vendor", "--from", os.path.join(HERE, ".."))
+        self.assertEqual(code, 0, out)
+        for f in ("CLAUDE.md", "SPEC.md", "ADOPTING.md", "README.md", "DECISIONS.md"):
+            text = self._read("vendor/dte/" + f)
+            self.assertTrue(text.startswith("<!-- vendored from DTE "), f)
+        dec = self._read("vendor/dte/DECISIONS.md")
+        self.assertIn("## Ring A", dec)
+        self.assertIn("B39 vendoredRules", dec)
+        self.assertIn("**Decision.**", dec)
+        self.assertIn("vendor/dte/*", self._read(".dteignore"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)   # DTE's own citations do not leak into this tree (I1)
+        code, out = run(self.root, "vendor", "--from", self.root)
+        self.assertEqual(code, 2)
+        self.assertIn("not a DTE checkout", out)
+
     def test_init_ignores_the_tool(self):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)

@@ -2596,6 +2596,84 @@ def cmd_export(tree, args):
     return 0
 
 
+VENDOR_FILES = ("CLAUDE.md", "SPEC.md", "ADOPTING.md", "README.md")
+VENDOR_DIR = "vendor/dte"
+
+
+def _source_commit(src):
+    try:
+        out = subprocess.run(["git", "-C", src, "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True)
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except OSError:
+        pass
+    return "unknown commit"
+
+
+def render_decisions(src_tree):
+    """One markdown file of a tree's in-effect nodes, by ring, for readers who must know
+    the decisions without hosting them as nodes.  dte:B39"""
+    out = ["# DTE decisions", "",
+           "Every in-effect decision of DTE itself, rendered. These are DTE's, not this",
+           "project's: read them, cite nothing here, and never re-create them as nodes.", ""]
+    cur = None
+    for n in src_tree.ordered_nodes():
+        if not n.in_effect:
+            continue
+        if n.ring != cur:
+            cur = n.ring
+            out += ["## Ring %s" % cur, ""]
+        held = " (human-held)" if n.human_held else ""
+        out += ["### %s%s" % (n.label(), held), ""]
+        for heading, label in (("## Decision", "Decision"), ("## Why", "Why"), ("## Consequences", "Consequences")):
+            sec = _section(n.body, heading)
+            if sec:
+                out += ["**%s.** %s" % (label, sec.strip()), ""]
+    return "\n".join(out).rstrip("\n") + "\n"
+
+
+def cmd_vendor(tree, args):
+    """dte:C25, dte:B39"""
+    src = os.path.abspath(args.src)
+    src_dec = os.path.join(src, "decisions")
+    missing = [f for f in VENDOR_FILES if not os.path.isfile(os.path.join(src, f))]
+    if missing or not os.path.isdir(src_dec):
+        print("not a DTE checkout: %s (missing %s)" % (src, ", ".join(missing + ([] if os.path.isdir(src_dec) else ["decisions/"]))))
+        return 2
+    dest = os.path.join(tree.root, args.dir)
+    os.makedirs(dest, exist_ok=True)
+    tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
+    stamp = "<!-- vendored from DTE %s on %s. Do not edit; refresh with: python %s vendor --from %s -->\n\n" % (
+        _source_commit(src), datetime.date.today().isoformat(), tool, args.src.replace(os.sep, "/"))
+    written = []
+    for f in VENDOR_FILES:
+        write_text(os.path.join(dest, f), stamp + read_text(os.path.join(src, f)))
+        written.append(f)
+    src_tree = Tree(src, src_dec)
+    write_text(os.path.join(dest, "DECISIONS.md"), stamp + render_decisions(src_tree))
+    written.append("DECISIONS.md")
+    rel_dest = args.dir.replace(os.sep, "/").rstrip("/")
+    print("vendored into %s/: %s" % (rel_dest, ", ".join(written)))
+    src_tool = os.path.join(src, "tools", "dte.py")
+    me = os.path.abspath(__file__)
+    if os.path.isfile(src_tool) and os.path.abspath(src_tool) != me:
+        if read_text(src_tool) != read_text(me):
+            write_text(me, read_text(src_tool))
+            print("refreshed %s from the source" % tool)
+        else:
+            print("%s already matches the source" % tool)
+    ign = os.path.join(tree.root, ".dteignore")
+    entry = rel_dest + "/*"
+    existing = read_text(ign) if os.path.isfile(ign) else ""
+    if entry not in existing.replace("\r\n", "\n").split("\n"):
+        head = existing if existing else IGNORE_TEMPLATE
+        write_text(ign, head.rstrip("\n") + "\n# Vendored DTE rule text: its citations are DTE's tree, not this one.\n%s\n" % entry)
+        print("added %s to .dteignore" % entry)
+    print("next: have your agent harness load %s/CLAUDE.md, SPEC.md, ADOPTING.md and DECISIONS.md at session start" % rel_dest)
+    return 0
+
+
 def cmd_init(tree, args):
     """dte:C13"""
     root = os.path.abspath(args.root)
@@ -2623,8 +2701,8 @@ def cmd_init(tree, args):
     print("next:")
     print("  1. write the core: dte new A --title \"<goal>\" --by <owner> --made-by human   (three to six of these)")
     print("  2. edit dte.cfg: authority map, docs globs, retire mode")
-    print("  3. vendor DTE's SPEC.md, CLAUDE.md and ADOPTING.md next to the tool, ignore them in .dteignore,")
-    print("     and have your agent harness load them at session start (a hook or a slash command)")
+    print("  3. dte vendor --from <path to a DTE checkout>: copies DTE's rule text and a render of its")
+    print("     decisions into vendor/dte/, ignored by the scanner; have your agent harness load them at session start")
     print("  4. dte validate, then dte coverage: that number is the adoption gauge")
     return 0
 
@@ -2647,6 +2725,9 @@ def main(argv=None):
     sub.add_parser("conflicts")
     sub.add_parser("coverage")
     sub.add_parser("next").add_argument("ring")
+    vd = sub.add_parser("vendor")
+    vd.add_argument("--from", dest="src", required=True, metavar="DIR", help="a DTE checkout")
+    vd.add_argument("--dir", default=VENDOR_DIR, help="where the copies go (default %s)" % VENDOR_DIR)
     sub.add_parser("scope").add_argument("--comments", action="store_true",
                                           help="list comment-heavy files with no citation (B38)")
     sub.add_parser("inbox")
@@ -2756,7 +2837,7 @@ def main(argv=None):
         "new": cmd_new, "show": cmd_show, "find": cmd_find, "ratify": cmd_ratify,
         "unratified": cmd_unratified, "import": cmd_import, "authorize": cmd_authorize,
         "conflict": cmd_conflict, "reparent": cmd_reparent, "set": cmd_set, "contest": cmd_contest, "retired": cmd_retired, "export": cmd_export,
-        "init": cmd_init, "cite": cmd_cite, "brief": cmd_brief, "hook": cmd_hook,
+        "init": cmd_init, "vendor": cmd_vendor, "cite": cmd_cite, "brief": cmd_brief, "hook": cmd_hook,
     }[args.cmd](tree, args)
 
 

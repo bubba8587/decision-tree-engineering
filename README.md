@@ -89,6 +89,7 @@ python tools/dte.py validate --as C   # consistency; as an agent at ring C, did 
 python tools/dte.py brief C --under B3   # the block to hand a subagent working at ring C
 python tools/dte.py export --out tree.json   # nodes, citations, ledger, inbox: join it to your graph
 python tools/dte.py init              # scaffold a new project
+python tools/dte.py vendor --from ../DTE   # copy DTE's rules and decisions in, ignored, stamped
 python tools/dte.py hook              # pre-commit: refuse commits that break the tree
 ```
 

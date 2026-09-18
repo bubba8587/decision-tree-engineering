@@ -415,7 +415,9 @@ with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18),
 `authorize` (dte:C21), `unratified` (dte:C23); and `validate` (a summary
 by default, `--full` for the whole unratified list) (with `--as`, defaulting to `$DTE_RING`),
 `export` (JSON: nodes, citations, ledger, inbox; the join surface for
-structural tools, dte:C12), `init` (scaffold, dte:C13), and `hook`
+structural tools, dte:C12), `init` (scaffold, dte:C13), `vendor` (copy
+DTE's rule text and a render of its decisions into an ignored directory,
+stamped with the source commit, dte:C25, dte:B39), and `hook`
 (pre-commit validate, dte:C14).
 Every output that names a node prints `ID name: title` unless summaries are off.
 The reference implementation is `tools/dte.py`. Exit code is non-zero when

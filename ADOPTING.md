@@ -11,10 +11,12 @@ and only goes up. Nothing fails until the tree itself is inconsistent.
    creates `decisions/`, a fully commented `dte.cfg`, and a `.dteignore`
    that already skips the tool itself (its citations belong to DTE's tree);
    add vendored, generated, and binary directories to the ignore file.
-   Vendor DTE's rule text next to the tool, in reading order: `CLAUDE.md`
-   (the protocol), `SPEC.md`, this file, `README.md`. Ignore them the same
-   way. Point your agent harness at them with a session-start hook or a
-   slash command; that is the harness's job, not the tree's.
+   Then `python dte.py vendor --from <path to a DTE checkout>`: it copies
+   DTE's rule text (`CLAUDE.md`, `SPEC.md`, this file, `README.md`) and a
+   render of DTE's decisions into `vendor/dte/`, stamped with the DTE
+   commit, and ignores the directory (B39 vendoredRules, C25). Run it again
+   to refresh. Point your agent harness at those copies with a session-start
+   hook or a slash command; that is the harness's job, not the tree's.
 2. Write the core. Sit with the owner and state the project's abstract goals
    in one or two sentences each. Three to six of them:
    `dte new A --name goalName --title "..." --by <owner> --made-by human --decision "..." --why "..."`.
@@ -63,9 +65,10 @@ Stop when validate is clean and coverage for that subsystem is 100%. Move on.
 
 ## Working with AI agents
 
-Vendor `CLAUDE.md` and have your harness load it; do not re-author it, and
+Have your harness load the vendored `CLAUDE.md`; do not re-author it, and
 never re-create DTE's own decisions as nodes in your tree: your tree holds
-your decisions, DTE's rules stay DTE's. From then on every agent session leaves a trail of `made_by: ai` nodes, and
+your decisions, DTE's rules stay DTE's (B39 vendoredRules). The vendored
+`DECISIONS.md` is how your agents read DTE's rules without hosting them. From then on every agent session leaves a trail of `made_by: ai` nodes, and
 the owner's job becomes ratification: read the unratified list at the end of
 each validate run, agree or supersede, set `ratified_by`.
 
