@@ -16,7 +16,7 @@ There are two kinds of agent. A tree agent holds a ring, reads the tree, records
 
 ## Why
 
-Stated by the owner on 2026-09-18: spec separation exists to unlock agent autonomy. A builder that reads the spec has no reason to question or contest anything in it, because every decision it embodies was settled before the spec was written. Denying the tree is what makes the builder special: it cannot be tempted by an unratified node it happened to read. A7 wants agents that never re-question what a node justifies; the strongest form is an agent that never sees the node. An import (FEEDBACK.md K2) produces nodes, not specs, so nothing is acted under and no contest is owed.
+Stated by the owner on 2026-09-18: spec separation exists to unlock agent autonomy. A builder that reads the spec has no reason to question or contest anything in it, because every decision it embodies was settled before the spec was written. Denying the tree is what makes the builder special: it cannot be tempted by an unratified node it happened to read. A7 wants agents that never re-question what a node justifies; the strongest form is an agent that never sees the node. An import produces nodes, not specs, so nothing is acted under and no contest is owed.
 
 ## Consequences
 
