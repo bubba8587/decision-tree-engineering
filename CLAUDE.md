@@ -58,7 +58,7 @@ permission is gone and the action becomes an inbox item instead.
 - If no existing node explains a choice you are making, and a reviewer could
   reasonably ask "why?", that is a new decision. Decide where it belongs:
   - **At your ring or deeper**: create it with
-    `python tools/dte.py new <ring> --title "..." --by <your model name>
+    `python tools/dte.py new <ring> --name camelCase --title "..." --by <your model name>
     --parents ... --decision "..." --why "..."`. Never hand-write
     frontmatter and never pick numbers by hand (B29). Say what you decided,
     why the parents demanded it, and what it implies. `--confidence medium`
@@ -90,18 +90,20 @@ built, costed, judged by its parents; then settled".
 
 ## When you talk about decisions (A5)
 
-Never name a decision by bare ID in chat. Always give the ID with its title,
-for example: A5 "a decision is always referred to by ID plus a short dense
-summary, never by bare ID". The reader almost certainly does not have the
-decision file open. `python tools/dte.py tree` prints the ID-plus-title form
-for every node; copy from there. When you write a node, make its `title`
-dense enough to stand in for the decision in a sentence, under 100
-characters.
+Never name a decision by bare ID in chat. Always give the ID with its
+camelCase name, for example A5 idPlusName, and add the title in quotes when
+the reader needs the sentence: A5 idPlusName "a decision is always referred
+to by ID plus its camelCase name, never by bare ID". The reader almost
+certainly does not have the decision file open. `python tools/dte.py tree`
+prints `ID name: title` for every node; copy from there. When you write a
+node, give it a `--name` a reviewer would say aloud (two or three words,
+camelCase, unique) and a `title` dense enough to stand in for the decision
+in a sentence, under 100 characters (B32 nameHandle, B16 nameAndTitle).
 
 ## What a node justifies, you do (B25)
 
 If an in-effect node covers an action, take it and report it as
-`ID "title"`. That line is the whole justification. Do not ask whether the
+`ID name`, title quoted if useful. That line is the whole justification. Do not ask whether the
 owner would prefer otherwise, do not offer to stop doing it next time, and
 do not re-argue the node. Example: an owner decision forces an edit to a
 ring-A file; you write `authorized_by: project owner` on it and report
@@ -113,7 +115,7 @@ owner disagrees through ratification, not through your asking.
 ## When you report work (B17)
 
 Every time you tell the owner that something now exists or was built, name
-the decision that governs it in the same message, as ID plus title. If you
+the decision that governs it in the same message, as ID plus name. If you
 created that node during the work, say so right there, not in a closing
 list. "The inbox is built" is incomplete; "the inbox is built, governed by
 B14 'unplaced decisions wait in decisions/inbox without an ID until someone

@@ -6,3 +6,4 @@ B2	2026-09-02	superseded	B23	Claude Fable 5.1	-	The ID letter is the ring; moves
 C4	2026-09-02	superseded	B22	Claude Fable 5.1	-	Coverage is a report, not a gate
 B26	2026-09-05	superseded	B29	Claude Fable 5.1	-	Every operation and every question in the spec has a dte command; agents never hand-edit frontmatter
 C16	2026-09-05	superseded	C18	Claude Fable 5.1	-	dte retitle rewords a title in place, records the old one in History, and guards human-held nodes
+B23	2026-09-18	superseded	B32	Claude Fable 5.1	project owner	No aliases; a move supersedes the old node with a new ID and rewrites every reference at once

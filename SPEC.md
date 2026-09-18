@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B23,B29,B27,B30,B31,C19 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B32,B29,B27,B30,B31,C19 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -20,7 +20,7 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
   way. Recorded as a **node**.
 - **Node**: one markdown file describing one decision (dte:B1).
 - **Ring** (or **layer**): the depth of a node from the core. Ring 0 is `A`,
-  ring 1 is `B`, and so on (dte:B23).
+  ring 1 is `B`, and so on (dte:B32).
 - **Core**: the `A` ring. The abstract goals of the project. Core nodes have no
   parents (dte:B10).
 - **Parent**: a node this node exists *because of*. Parents are always in a
@@ -42,12 +42,13 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
   authority places it in a ring (dte:B14).
 - **Outbox**: the human-to-agent channel: a note in `decisions/outbox/`, an
   action tag on a node, or a `ratified_by` typed in by hand (dte:B31).
-- **Summary**: the node's `title`, which always accompanies its ID when a
-  model refers to it (dte:A5, dte:B16).
+- **Name**: the node's camelCase handle, unique among in-effect nodes,
+  which always accompanies its ID when a model refers to it (dte:A5,
+  dte:B32). **Title** is the one-sentence description behind it (dte:B16).
 - **Ledger**: `decisions/RETIRED`, one line per retired node. Burns the
   number for ever and records who retired it (dte:B24, dte:C11).
 
-## 3. Identity and rings (dte:B23)
+## 3. Identity and rings (dte:B32)
 
 - An ID is one uppercase letter followed by a positive integer: `A1`, `B14`,
   `C3`. The letter is the ring. `A` is the core.
@@ -56,7 +57,8 @@ DTE is not a dependency graph. It records *why*, not *what calls what*
   counting the tree, the ledger, and every branch git knows about (dte:C15).
 - The ID appears in the frontmatter `id:` field and is the file name:
   `decisions/<ring>/<ID>.md`.
-- There are no aliases. A node **moved** to another ring becomes a new node
+- A `name` is a handle, never a second identity: the tool resolves only IDs
+  (dte:B32). A node **moved** to another ring becomes a new node
   with a new ID there; the old node stays as a file, `superseded` by the
   new one, and every citation and child is rewritten in the same change
   (see section 7). The old file is deleted or kept per `retire` in
@@ -70,6 +72,7 @@ here is supported (dte:C1): scalars, inline lists `[a, b]`, and block lists.
 ```yaml
 ---
 id: B3
+name: citationToken       # camelCase handle, unique; the chat form beside the ID (dte:B32)
 title: "Artifacts cite decisions with a dte: token"   # free text is double-quoted (dte:B30)
 status: active            # proposed | active | superseded | reverted
 parents: [A1, A2]         # required unless ring A; each must be shallower
@@ -83,17 +86,19 @@ ratified_by:              # human who confirmed an ai/joint decision (optional)
 authorized_by:            # human who authorised retiring/moving a human-held node
 contested_by:             # who ran this node's one contest while unratified (dte:B28)
 confidence: high          # low | medium | high (optional)
+aliases: [citationToken]  # written by the tool from name so [[name]] resolves in Obsidian
 ---
 ```
 
-`title` is the summary string (dte:A5). Write it as the decision in one
-sentence, under 100 characters, so it can stand beside the ID in chat.
+`name` is the handle a model says beside the ID (dte:A5, dte:B32); `title`
+is the description. Write the title as the decision in one sentence, under
+100 characters (dte:B16).
 
 With `links = wikilink` (dte:B30) the link fields are written as quoted
 wikilinks, `parents: ["[[A1]]", "[[A2]]"]`, so Obsidian draws them as
 edges; the tool reads both spellings whatever the setting. `tags` and
 `cssclasses` are accepted as Obsidian's own keys; `null` and `~` read as
-empty; `aliases` is still an error (dte:B23). Dot-directories under
+empty; `aliases` must equal `[name]` (dte:B32). Dot-directories under
 `decisions/` (`.obsidian`) are ignored, so the directory opens as a vault.
 
 Body sections, in this order. Only **Decision** and **Why** are required.
@@ -169,12 +174,12 @@ Optional. One line per event: created, ratified, moved, superseded.
 - **R8 (dte:A6, dte:B15)** An agent never places or alters a node shallower
   than its ring. It writes the decision to the inbox and asks. With
   `--as <ring>`, validate enforces this on the agent's changed files.
-- **R9 (dte:A5)** A model refers to a decision as `ID title`, never bare ID,
-  unless `summaries = off`.
+- **R9 (dte:A5)** A model refers to a decision as `ID name`, adding the
+  title when the reader needs it, never bare ID, unless `summaries = off`.
 
 ## 7. Operations
 
-**Add a decision.** `dte new <ring> --title "..." --by <name> --parents A1
+**Add a decision.** `dte new <ring> --name camelCase --title "..." --by <name> --parents A1
 [--decision "..." --why "..."]`. The tool allocates the ID and writes the
 node; unfilled sections are `TODO` and validate warns until they are
 written. Cite it from the artifacts it produces. Run `dte validate`.
@@ -193,7 +198,7 @@ orphaned child is fixed with `dte reparent <ID> --parents ... --by <name>`
 or retired; each citation is re-pointed with `dte cite` or removed. Nodes
 OLD had superseded are printed as candidates to return.
 
-**Move (promote or demote).** Moving changes precedence (dte:A1, dte:B23).
+**Move (promote or demote).** Moving changes precedence (dte:A1, dte:B32).
 A move is a supersession with the same text at a different ring. Use
 `dte move <ID> <ring> --by <name> [--parents ...] [--authorized-by <human>]`,
 which does all of the following in one run (dte:C9):
@@ -214,9 +219,10 @@ has declared contradictions: promotion means it now wins ones it lost.
 Never `git mv` or hand-delete a node file; validation rejects renames and
 ledger-less deletions.
 
-**Set a field (dte:B29, dte:C18).** `dte set <ID> title|confidence <value>
---by <name> [--authorized-by <human>]` is the one generic frontmatter write,
-for the two fields that carry no invariant. Every other field belongs to the
+**Set a field (dte:B29, dte:C18).** `dte set <ID> title|name|confidence
+<value> --by <name> [--authorized-by <human>]` is the one generic frontmatter
+write, for the fields that carry no invariant (`name` is checked for shape and
+uniqueness and rewrites `aliases`). Every other field belongs to the
 command that owns its invariant, and `set` names that command when refused.
 Provenance fields are never changed after creation (dte:A3). The old value
 goes to History.
@@ -331,7 +337,7 @@ may decide at any ring; a human-made node is valid anywhere.
 
 | key             | default | meaning                                      |
 |-----------------|---------|----------------------------------------------|
-| `summaries`     | `on`    | print `ID title`; `off` prints bare IDs (A5) |
+| `summaries`     | `on`    | print `ID name: title`; `off` prints bare IDs (A5) |
 | `protect_human` | `on`    | enforce R7 (B11)                             |
 | `authority`     | none    | advisory ring-to-holder map (B13)            |
 | `docs`          | `*.md, docs/*` | describing artifacts; not counted as reach (C8) |
@@ -371,7 +377,7 @@ with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18),
 `export` (JSON: nodes, citations, ledger, inbox; the join surface for
 structural tools, dte:C12), `init` (scaffold, dte:C13), and `hook`
 (pre-commit validate, dte:C14).
-Every output that names a node prints `ID title` unless summaries are off.
+Every output that names a node prints `ID name: title` unless summaries are off.
 The reference implementation is `tools/dte.py`. Exit code is non-zero when
 `validate` finds errors.
 

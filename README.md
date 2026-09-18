@@ -49,7 +49,8 @@ date: 2026-09-02
 
 Any artifact cites a decision with the token `dte:ID` in a comment or in prose,
 or as `[[ID]]` when `links = wikilink` is set; `decisions/` then opens directly
-as an Obsidian vault with lineage as graph edges (dte:B30).
+as an Obsidian vault with lineage as graph edges (dte:B30). Every node has a
+camelCase `name` beside its `title`; chat says `ID name` (dte:A5, dte:B32).
 
 ## Ask the tree
 

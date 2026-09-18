@@ -13,7 +13,7 @@ Tags go in the `tags` property or inline in the body. Typing your name into `rat
 
 **Write a decision.** New note in `outbox/`, any shape. Say what and why. Above ring C it becomes an inbox item first.
 
-**Find things.** `[[C19]]` by ID. `DTE.base` has the Outbox, Unratified, Contested, Inbox and All views.
+**Find things.** `[[C19]]` by ID, `[[bothLinkForms]]` by name. `DTE.base` has the Outbox, Unratified, Contested, Inbox and All views.
 
 **Never.** Rename or delete a node file, or change `id`, `parents`, `status`. Those go through the tool.
 

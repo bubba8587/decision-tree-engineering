@@ -4,6 +4,8 @@ filters:
 properties:
   file.name:
     displayName: ID
+  name:
+    displayName: Name
   title:
     displayName: Title
   made_by:
@@ -23,6 +25,7 @@ views:
         - file.hasTag("ratify", "retire", "contest", "ask")
     order:
       - file.name
+      - name
       - title
       - file.tags
       - file.mtime
@@ -39,6 +42,7 @@ views:
       direction: ASC
     order:
       - file.name
+      - name
       - title
       - made_by
       - by
@@ -53,6 +57,7 @@ views:
         - note.ratified_by.isEmpty()
     order:
       - file.name
+      - name
       - title
       - contested_by
       - date
@@ -63,6 +68,7 @@ views:
         - file.inFolder("inbox")
     order:
       - file.name
+      - name
       - title
       - proposed_ring
       - ask
@@ -77,6 +83,7 @@ views:
       direction: ASC
     order:
       - file.name
+      - name
       - title
       - status
       - ratified_by

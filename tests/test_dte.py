@@ -156,15 +156,15 @@ class TestValidate(Base):
         self.assertEqual(code, 1)
         self.assertIn("same-ring contradiction", out)
 
-    def test_aliases_field_is_rejected(self):
-        # dte:B23
+    def test_aliases_must_equal_name(self):
+        # dte:B32 a handle bound to the node, never a second identity
         p = os.path.join(self.root, "decisions", "B", "B1.md")
         with open(p, encoding="utf-8") as fh:
             text = fh.read()
         write_file(self.root, "decisions/B/B1.md", text.replace("made_by:", "aliases: [B9]\nmade_by:"))
         code, out = run(self.root, "validate")
         self.assertEqual(code, 1)
-        self.assertIn("unknown frontmatter field 'aliases'", out)
+        self.assertIn("aliases must be exactly the name", out)
 
     def test_long_title_warns(self):
         # dte:B16
@@ -259,7 +259,7 @@ class TestAuthority(Base):
         self.assertIn("B3: changed by an agent at ring C but lives at ring B; escalate to orchestrator", out)
 
     def test_demotion_touches_the_shallower_file(self):
-        # dte:B23  the alias back door is closed: demoting B1 means editing a B file
+        # dte:B32  the alias back door is closed: demoting B1 means editing a B file
         self._init_repo()
         code, out = run(self.root, "move", "B1", "C", "--by", "agent", "--parents", "B2")
         self.assertEqual(code, 2)  # C1 is a child at ring C, refused
@@ -361,7 +361,7 @@ class TestScope(Base):
 
 
 class TestMove(Base):
-    """dte:B23, dte:C9, dte:B24"""
+    """dte:B32, dte:C9, dte:B24"""
 
     def test_move_deletes_old_and_rewrites_everything(self):
         write_node(self.root, id="D1", parents="C1", made_by="ai")
@@ -910,3 +910,21 @@ class TestVault(Base):
         code, out = run(self.root, "outbox")
         self.assertIn("Outbox empty", out)
         self.assertNotIn("tags:", self._read("decisions/B/B1.md"))
+
+    def test_name_is_a_unique_camelcase_handle(self):
+        # dte:B32, dte:B16
+        code, out = run(self.root, "new", "C", "--name", "shareImpl", "--title", "t", "--by", "agent", "--parents", "B1")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/C/C2.md")
+        self.assertIn("name: shareImpl", text)
+        self.assertIn("aliases: [shareImpl]", text)
+        code, out = run(self.root, "tree")
+        self.assertIn("C2 shareImpl: t", out)
+        code, out = run(self.root, "set", "B1", "name", "shareImpl", "--by", "agent")
+        self.assertEqual(code, 2)
+        code, out = run(self.root, "set", "B1", "name", "Not-Camel", "--by", "agent")
+        self.assertEqual(code, 2)
+        code, out = run(self.root, "set", "B1", "name", "oneFile", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        code, out = run(self.root, "find", "oneFile")
+        self.assertIn("B1", out)
