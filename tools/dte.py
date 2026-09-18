@@ -622,6 +622,7 @@ class Tree:
                     E.append("%s: conflicts_with %s %s" % (i, c, self.retired_hint(c)))
                 elif self.nodes[cid].in_effect and node.in_effect \
                         and self.nodes[cid].ring == node.ring:
+            # a same-ring contradiction is a refinement filed as a sibling: dte:B35
                     E.append("%s: same-ring contradiction with %s; supersede or move one" % (i, cid))
             # R7 human-held protection  dte:B11
             if CONFIG["protect_human"] and node.human_held and not node.authorized_by:
@@ -2274,7 +2275,7 @@ def cmd_brief(tree, args):
 
 
 def spec_skeleton(tree, node):
-    """dte:C26, dte:A8"""
+    """dte:C26, dte:B37"""
     tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
     out = [comment_line(".md", cite_text([node.id])), "", "# Spec: %s" % (node.name or node.id), "",
            "Serves %s %s (ring %s). Filled by an agent that holds a ring; built by an agent that never reads the tree (B42)."
@@ -2576,6 +2577,7 @@ def cmd_contest(tree, args):
     print("Children of %s (%d) and artifacts citing it (%d) count for nothing: a better node may need none of them."
           % (node.id, len(kids), len(cites)))
     print("Do not reopen parents, siblings, or children in this contest.")
+    # dte:B40
     print("A Why that names the incident that forced the node is load-bearing; one that names none is")
     print("preventive judgment and the thinner claim (B40 originInWhy). Weigh it so.")
     print()
