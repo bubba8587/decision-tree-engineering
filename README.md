@@ -12,7 +12,9 @@ decision(s) it exists to serve.
 
 DTE works **alongside** structural methods such as graph engineering. A
 dependency graph tells you *what* touches *what*. The decision tree tells you
-*why* any of it is there, and who decided.
+*why* any of it is there, and who decided. It is traceability for rationale:
+from any decision to every spec, test, file and instruction that serves it,
+and back.
 
 ## The one rule that matters (A1)
 

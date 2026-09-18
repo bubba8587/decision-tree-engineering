@@ -123,6 +123,20 @@ Optional. A contest (dte:B28) records its verdict here.
 Optional. One line per event: created, ratified, moved, superseded.
 ```
 
+### Relationship to ADR and MADR
+
+A node is an Architecture Decision Record with more structure. Against the
+MADR template (adr.github.io/madr, version 4): its *Context and Problem
+Statement* and *Decision Drivers* are the Why; *Decision Outcome* is the
+Decision; its *Consequences* subsection is Consequences; *Considered
+Options* and *Pros and Cons of the Options* are Alternatives considered;
+`status: superseded by ADR-NNNN` is `superseded_by`; `decision-makers` is
+`by` plus `ratified_by`. MADR's *Confirmation* subsection has no field here:
+confirmation is derived from citing tests (dte:B37). What a node has that
+MADR does not: `ring`, `parents`, `made_by`, `contested_by`, the ledger.
+The mapping is declared so a reader who knows ADRs can read a tree; the
+tool does not export MADR files.
+
 ### Status semantics (dte:C5)
 
 | status       | in effect?         | meaning                                             |

@@ -90,6 +90,36 @@ or move them without a human writing `authorized_by` (B11).
 - When two decisions fight: `dte conflicts`. The ring order gives the answer.
   If the answer is wrong, the fix is a move, not an edit.
 
+## Beside a spec tool
+
+Spec-driven toolchains hold the middle layer, the *what* (B37 derivedLinks:
+tree above, spec in the middle, code below). DTE does not replace them and
+is not a fourth spec format; it is the layer their files should cite. As
+each tool's own documentation describes it:
+
+- **GitHub Spec Kit** writes a constitution at `memory/constitution.md`
+  ("immutable principles that govern how specifications become code") and,
+  per feature, `specs/<branch>/spec.md`, `plan.md` and `tasks.md`. The
+  constitution is a prose rendering of rings A and B; each spec is a spec
+  in DTE's sense and should cite the nodes it serves.
+- **AWS Kiro** writes, per feature, `requirements.md` (user stories with
+  acceptance criteria in EARS notation), `design.md` and `tasks.md`, with
+  standing project context under `.kiro/steering/`. The steering files are
+  where the vendored DTE rule text goes; each requirement should cite the
+  node it serves.
+- **OpenSpec** keeps current specs under `openspec/specs/` and each change
+  under `openspec/changes/<name>/` as `proposal.md` ("why we're doing
+  this, what's changing"), `design.md`, `tasks.md` and delta specs, archived
+  on completion. A proposal's *why* is a decision: it belongs in a node, and
+  the proposal cites it. A proposal an agent is not authorized to decide is
+  an inbox item.
+
+In each case the tool's per-feature files are consumed at build time and go
+stale after; the nodes they cite outlive them, and `dte trace` on a spec
+file still answers why it exists. The word for what `trace` and `blast`
+compute is traceability: not requirements to tests, but decisions to
+everything that serves them.
+
 ## Alongside graph engineering
 
 Keep the structural graph where it is. The join key is the file path: a
