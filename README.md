@@ -80,6 +80,9 @@ python tools/dte.py move C4 B --by owner              # promote: new id, old ret
 python tools/dte.py retire B5 --by owner --superseded-by B24   # retire through the ledger
 python tools/dte.py inbox / place <slug> B --by owner # escalation and placement
 python tools/dte.py outbox [--done <ID|note>]  # what the human tagged or dropped in the vault (dte:B31)
+python tools/dte.py import <dir> --by <you>    # lift an existing rule corpus, properties unchanged (dte:B33)
+python tools/dte.py authorize <ID> --by <human> # record a human's go-ahead on an existing node (dte:C21)
+python tools/dte.py unratified                  # the full list validate only counts (dte:C23)
 
 # check and integrate
 python tools/dte.py validate --as C   # consistency; as an agent at ring C, did I overstep?

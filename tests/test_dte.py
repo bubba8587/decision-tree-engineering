@@ -124,7 +124,7 @@ class Base(unittest.TestCase):
 
 class TestValidate(Base):
     def test_clean_tree_passes(self):
-        code, out = run(self.root, "validate")
+        code, out = run(self.root, "validate", "--full")
         self.assertEqual(code, 0, out)
         self.assertIn("OK", out)
         self.assertIn("B1", out.split("Unratified")[1])
@@ -867,7 +867,7 @@ class TestVault(Base):
         write_node(self.root, id="C2", parents='"[[B1]]"', title='"colon: inside"', made_by="ai")
         write_file(self.root, "src/w.py", "# [[C2]] and [[%s|text]]" % "B2" + chr(10))  # split: not a citation here
         write_file(self.root, "decisions/.obsidian/app.json", "{}")
-        code, out = run(self.root, "validate")
+        code, out = run(self.root, "validate", "--full")
         self.assertEqual(code, 0, out)
         self.assertIn("C2 colon: inside", out)
         tree = dte.Tree(self.root, os.path.join(self.root, "decisions"))
@@ -928,3 +928,112 @@ class TestVault(Base):
         self.assertEqual(code, 0, out)
         code, out = run(self.root, "find", "oneFile")
         self.assertIn("B1", out)
+
+
+class TestFeedbackRound(Base):
+    # dte:B33, dte:B36, dte:B37, dte:C20, dte:C21, dte:C22, dte:C23, dte:C24
+
+    def test_validate_is_a_summary_and_unratified_lists(self):
+        code, out = run(self.root, "validate")
+        self.assertIn("Unratified AI/joint decisions: 1", out)
+        self.assertNotIn("[ai: tester]", out)
+        code, out = run(self.root, "unratified")
+        self.assertIn("B1", out)
+        self.assertNotIn("no children and no citing artifacts", out)
+
+    def test_zz_is_a_placeholder_not_a_citation(self):
+        write_file(self.root, "docs/how.md", "cite it as `dte:ZZ1` or `[[ZZ1]]`\n")
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+
+    def test_cite_does_not_merge_into_a_line_level_citation(self):
+        write_file(self.root, "src/h.py", "x = 1\n# headless (dte:C1, enforced by the rete test)\n")
+        code, out = run(self.root, "cite", os.path.join(self.root, "src", "h.py"), "B2")
+        self.assertEqual(code, 0, out)
+        text = self._read("src/h.py")
+        self.assertIn("# " + "dte" + ":B2\n", text)
+        self.assertIn("(dte:C1, enforced", text)
+
+    def test_body_file_and_import(self):
+        write_file(self.root, "body.md", "## Decision\n\nD `x: y`\n\n## Why\n\nW\n")
+        code, out = run(self.root, "new", "C", "--title", "t", "--by", "a", "--parents", "B1", "--body-file", os.path.join(self.root, "body.md"))
+        self.assertEqual(code, 0, out)
+        self.assertIn("D `x: y`", self._read("decisions/C/C2.md"))
+        write_file(self.root, "old/one.md", "---\nring: B\nname: oneRule\ntitle: rule one\nparents: [A1]\nratified_by: owner\nconfidence: high\n---\n## Decision\n\nd1\n\n## Why\n\nw1\n")
+        write_file(self.root, "old/two.md", "---\nring: C\ntitle: rule two\nparents: [oneRule, B2]\n---\n## Decision\n\nd2\n\n## Why\n\nw2\n")
+        write_file(self.root, "old/three.md", "---\nring: D\ntitle: rule three\nparents: [two]\n---\n## Decision\n\nd3\n\n## Why\n\nw3\n")
+        code, out = run(self.root, "import", os.path.join(self.root, "old"), "--by", "agent")
+        self.assertEqual(code, 0, out)
+        self.assertIn("imported 3 nodes", out)
+        b3 = self._read("decisions/B/B3.md")
+        self.assertIn("ratified_by: owner", b3)
+        self.assertIn("imported from", b3)
+        c3 = self._read("decisions/C/C3.md")
+        self.assertIn("parents: [B3, B2]", c3)
+        self.assertIn("parents: [C3]", self._read("decisions/D/D1.md"))
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        self.assertIn("2 imported", out)
+        self.assertNotIn("OUTBOX", out)   # a carried ratified_by is not a vault edit
+        write_file(self.root, "old/bad.md", "---\nring: C\ntitle: bad\nparents: [nobody]\nenforced_by: x\n---\n## Decision\n\n## Why\n")
+        code, out = run(self.root, "import", os.path.join(self.root, "old"), "--by", "agent")
+        self.assertEqual(code, 2)
+        self.assertIn("unknown property", out)
+
+    def test_authorize_records_a_go_ahead(self):
+        code, out = run(self.root, "authorize", "A1", "--by", "owner", "--note", "go all out")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/A/A1.md")
+        self.assertIn("authorized_by: owner", text)
+        self.assertIn("authorized by owner: go all out", text)
+
+    def test_retire_carries_contested_by_and_contest_can_write_winner(self):
+        self._init_repo()
+        code, out = run(self.root, "contest", "B1", "--record", "--chosen", "variant", "--by", "agent",
+                        "--note", "variant costs less", "--title", "the variant", "--name", "theVariant",
+                        "--decision", "v", "--why", "w")
+        self.assertEqual(code, 0, out)
+        self.assertIn("created B3", out)
+        self.assertIn("retired B1", out)
+        b3 = self._read("decisions/B/B3.md")
+        self.assertIn("contested_by: agent", b3)
+        self.assertIn("won the contest of B1", b3)
+        self.assertIn("Carried from B1", b3)
+        self.assertIn("parents: [A1]", b3)
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 contested", out)
+
+    def test_body_change_without_history_warns(self):
+        self._init_repo()
+        p = self._read("decisions/B/B1.md")
+        write_file(self.root, "decisions/B/B1.md", p.replace("## Decision\nx", "## Decision\nchanged"))
+        code, out = run(self.root, "validate")
+        self.assertIn("body changed in this working tree with no new History line", out)
+        self.assertIn("[body changed, no History line]", out)
+        write_file(self.root, "decisions/B/B1.md", self._read("decisions/B/B1.md") + "\n## History\n\n- 2026-09-18 reworded by agent.\n")
+        code, out = run(self.root, "validate")
+        self.assertNotIn("no new History line", out)
+        self.assertIn("[body changed]", out)
+
+    def test_layers_are_derived_from_globs(self):
+        write_file(self.root, "dte.cfg", "tests = tests/*\nspecs = specs/*\nagents = CLAUDE.md\ndocs = *.md\n")
+        write_file(self.root, "tests/test_a.py", "# dte:C1\n")
+        write_file(self.root, "specs/a.md", "<!-- dte:B1 -->\n")
+        write_file(self.root, "CLAUDE.md", "dte" + ":B2\n")
+        code, out = run(self.root, "show", "C1")
+        self.assertIn("enforced by:", out)
+        self.assertIn("implemented by:", out)
+        code, out = run(self.root, "show", "B1")
+        self.assertIn("specified by:", out)
+        code, out = run(self.root, "coverage")
+        self.assertIn("no citing test", out)
+        self.assertIn("B1", out.split("no citing test")[1])
+        self.assertNotIn("C1", out.split("no citing test")[1])
+        code, out = run(self.root, "scope")
+        self.assertNotIn("B2", out)   # instructed by CLAUDE.md counts as reach (K9)
+
+    def test_init_ignores_the_tool(self):
+        code, out = run(self.root, "init")
+        self.assertEqual(code, 0, out)
+        self.assertIn("dte.py", self._read(".dteignore"))

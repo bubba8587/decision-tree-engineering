@@ -126,8 +126,13 @@ LEDGER = "RETIRED"       # dte:C11
 
 DEFAULTS = {"summaries": True, "protect_human": True, "authority": (),
             "docs": ("*.md", "docs/*"), "broad_fraction": 0.3, "broad_min": 5,   # dte:C8
+            # Layers below the tree, told apart by glob so a node never stores what is below it.  dte:B37,C24
+            "specs": ("specs/*", "spec/*", "*.spec.md"),
+            "tests": ("tests/*", "test/*", "test_*", "*_test.*", "*.test.*", "*.spec.ts", "*.spec.js"),
+            "agents": ("CLAUDE.md", "AGENTS.md", ".claude/*", ".cursorrules", ".github/copilot-instructions.md"),
             "retire": "delete",   # dte:B24
-            "links": "token"}     # token writes dte:ID; wikilink writes [[ID]] (Obsidian-browsable)
+            "links": "token",     # token writes dte:ID; wikilink writes [[ID]] (Obsidian-browsable)
+            "scan_self": False}   # the tool's own file is skipped unless the tree is DTE's own (dte:C3)
 CONFIG = dict(DEFAULTS)
 
 
@@ -146,10 +151,10 @@ def load_config(root):
                 continue
             key, _, val = line.partition("=")
             key, val = key.strip(), val.strip()
-            if key in ("summaries", "protect_human"):
+            if key in ("summaries", "protect_human", "scan_self"):
                 cfg[key] = val.lower() in ("on", "true", "yes", "1")
-            elif key == "docs":
-                cfg["docs"] = tuple(x.strip() for x in val.split(",") if x.strip())
+            elif key in ("docs", "specs", "tests", "agents"):
+                cfg[key] = tuple(x.strip() for x in val.split(",") if x.strip())
             elif key == "broad_fraction":
                 cfg["broad_fraction"] = float(val)
             elif key == "broad_min":
@@ -290,6 +295,11 @@ class Node:
     @property
     def in_effect(self):
         return self.status in IN_EFFECT
+
+    @property
+    def imported(self):
+        """Re-homed existing content: the import wrote a History line saying so.  dte:B33"""
+        return bool(re.search(r"^- \S+ imported from ", _section(self.body, "## History"), re.M))
 
     @property
     def human_held(self):
@@ -622,10 +632,9 @@ class Tree:
                     E.append("%s:%d: citation to unknown id %s" % (rel, ln, cid))
             elif not self.nodes[resolved].in_effect:
                 W.append("%s:%d: cites %s which is %s" % (rel, ln, cid, self.nodes[resolved].status))
-        cited = {r for _, _, _, r in self.citations if r}
-        for i in sorted(self._leaf_ids, key=id_key):
-            if i not in cited:
-                W.append("%s: in effect but has no children and no citing artifacts" % i)
+        for node, logged in self.body_changes():   # dte:B36
+            if not logged:
+                W.append("%s: body changed in this working tree with no new History line; add one" % node.id)
         for code, rel in self.retired_paths():   # dte:C11
             gone_id = os.path.splitext(os.path.basename(rel))[0]
             if code == "R":
@@ -730,12 +739,11 @@ class Tree:
     def scope_findings(self):
         """Advisory scope checks.  dte:B21,C8"""
         self.validate()
-        docs = list(CONFIG["docs"])
         frac, minimum = CONFIG["broad_fraction"], CONFIG["broad_min"]
         impl = defaultdict(set)
         core_lines = []
         for rel, ln, cid, r in self.citations:
-            if not r or self._ignored(rel, docs):
+            if not r or self.layer_of(rel) == "docs":   # dte:B37 docs describe; specs, tests, agents, code reach
                 continue
             impl[r].add(rel)
             if self.nodes[r].ring == "A":
@@ -761,7 +769,7 @@ class Tree:
                 files |= impl.get(d, set())
             if not desc and not files:
                 F.append(("no reach", n.id,
-                          "nothing exists because of it: no descendants, no implementing artifact; retire it, or cite it from what it governs"))
+                          "nothing exists because of it: no descendants, no citing spec, code, test or agent instruction; retire it, or cite it from what it governs"))
                 continue
             d_share = len(desc) / n_noncore if n_noncore else 0.0
             f_share = len(files) / n_art if n_art else 0.0
@@ -777,6 +785,47 @@ class Tree:
     def unratified(self):
         return [n for n in self.ordered_nodes()
                 if n.made_by in ("ai", "joint") and not n.ratified_by and n.in_effect]
+
+    LAYERS = ("tests", "specs", "agents", "docs")
+    LAYER_LABEL = {"tests": "enforced by", "specs": "specified by", "agents": "instructs",
+                   "docs": "described by", "code": "implemented by"}
+
+    def layer_of(self, rel):
+        """Which layer below the tree a citing artifact belongs to, by the dte.cfg globs.  dte:B37,C24"""
+        for layer in self.LAYERS:
+            if self._ignored(rel, list(CONFIG[layer])):
+                return layer
+        return "code"
+
+    def cited_by(self, i):
+        """{layer: {rel: [lines]}} every artifact citing i, grouped by layer."""
+        out = defaultdict(lambda: defaultdict(list))
+        for rel, ln, cid, r in self.citations:
+            if r == i:
+                out[self.layer_of(rel)][rel].append(ln)
+        return out
+
+    def body_changes(self):
+        """[(node, has_new_history)] nodes whose body differs from HEAD.  dte:B36,C7"""
+        changed, exact = self.changed_files()
+        if not exact:
+            return []
+        by_path = {self.rel(n.path): n for n in self.nodes.values()}
+        out = []
+        for rel in sorted(changed):
+            node = by_path.get(rel)
+            if node is None:
+                continue
+            old = self.node_at_head(rel)
+            if old is None:
+                continue
+            strip = lambda b: re.sub(r"\n## History\n.*", "", b.replace("\r\n", "\n"), flags=re.S).strip()
+            if strip(old.body) != strip(node.body):
+                hist = lambda b: [l for l in b.replace("\r\n", "\n").split("\n") if l.startswith("- ")]
+                old_h = _section(old.body, "## History")
+                new_h = _section(node.body, "## History")
+                out.append((node, len(hist(new_h)) > len(hist(old_h))))
+        return out
 
     # -- scanning  dte:C3
     def _ignores(self):
@@ -805,6 +854,7 @@ class Tree:
             return
         pats = self._ignores()
         dec_rel = self.rel(self.decisions_dir)
+        me = os.path.abspath(__file__)   # the tool's own citations belong to DTE's tree, not the adopter's
         for dirpath, dirs, files in os.walk(self.root):
             dirs[:] = sorted(d for d in dirs if d != ".git"
                              and not self._ignored(self.rel(os.path.join(dirpath, d)), pats))
@@ -812,6 +862,8 @@ class Tree:
                 path = os.path.join(dirpath, fn)
                 rel = self.rel(path)
                 if rel == dec_rel or rel.startswith(dec_rel + "/") or self._ignored(rel, pats):
+                    continue
+                if os.path.abspath(path) == me and not CONFIG.get("scan_self"):
                     continue
                 try:
                     with open(path, "rb") as fh:
@@ -869,7 +921,7 @@ class Tree:
 
 # ---------------------------------------------------------------- commands
 
-def report(tree, show_unratified=True):
+def report(tree, show_unratified=True, full=False):
     for e in tree.errors:
         print("ERROR   " + e)
     for w in tree.warnings:
@@ -878,12 +930,33 @@ def report(tree, show_unratified=True):
         print_inbox(tree)
     if show_unratified:
         un = tree.unratified()
-        if un:
+        if un and full:
+            print_unratified(tree, un)
+        elif un:
             contested = sum(1 for n in un if n.contested_by)
-            print("\nUnratified AI/joint decisions (%d, %d contested):  dte:B7, dte:B28" % (len(un), contested))
-            for n in un:
-                who = ("  contested by %s" % n.contested_by) if n.contested_by else ""
-                print("  %s  [%s: %s]%s" % (n.label(), n.made_by, n.by, who))
+            imported = sum(1 for n in un if n.imported)
+            print("\nUnratified AI/joint decisions: %d (%d contested, %d imported); list: dte unratified  dte:B7, dte:B28"
+                  % (len(un), contested, imported))
+
+
+def print_unratified(tree, un=None):
+    """dte:C23 the full list lives behind its own command so validate stays short"""
+    un = tree.unratified() if un is None else un
+    if not un:
+        print("No unratified AI/joint decisions.")
+        return
+    contested = sum(1 for n in un if n.contested_by)
+    print("Unratified AI/joint decisions (%d, %d contested):  dte:B7, dte:B28" % (len(un), contested))
+    for n in un:
+        who = ("  contested by %s" % n.contested_by) if n.contested_by else ""
+        imp = "  imported" if n.imported else ""
+        print("  %s  [%s: %s]%s%s" % (n.label(), n.made_by, n.by, who, imp))
+
+
+def cmd_unratified(tree, args):
+    tree.validate()
+    print_unratified(tree)
+    return 0
 
 
 def print_inbox(tree):
@@ -905,9 +978,13 @@ def print_changed_nodes(tree):
     hits = [by_path[r] for r in sorted(changed) if r in by_path]
     if not hits:
         return
-    print("\nNodes changed in this working tree (report these, ID plus title):  dte:B17")
+    bodies = {n.id: logged for n, logged in tree.body_changes()}
+    print("\nNodes changed in this working tree (report these, ID plus name):  dte:B17")
     for n in sorted(hits, key=lambda n: id_key(n.id)):
-        print("  %s" % n.label())
+        note = ""
+        if n.id in bodies:
+            note = "  [body changed%s]" % ("" if bodies[n.id] else ", no History line")
+        print("  %s%s" % (n.label(), note))
 
 
 def cmd_scope(tree, args):
@@ -933,7 +1010,7 @@ def cmd_scope(tree, args):
 
 def cmd_validate(tree, args):
     ok = tree.validate(as_ring=args.as_ring)
-    report(tree)
+    report(tree, full=args.full)
     print_changed_nodes(tree)
     n_out = len(tree.outbox_items())
     if n_out:
@@ -1112,6 +1189,12 @@ def cmd_coverage(tree, args):
         print("No citation:")
         for f in missing:
             print("  " + f)
+    enforced = {r for rel, _, _, r in tree.citations if r and tree.layer_of(rel) == "tests"}
+    unenforced = [n for n in tree.ordered_nodes() if n.in_effect and n.ring != "A" and n.id not in enforced]
+    if unenforced:
+        print("\nIn effect, no citing test (%d); a rule nothing checks can be violated silently (B37):" % len(unenforced))
+        for n in unenforced:
+            print("  " + n.label())
     return 0
 
 
@@ -1399,9 +1482,13 @@ def cmd_retire(tree, args):
         if old_id not in new.supersedes:
             t = set_field(t, "supersedes", fm_ids(new.supersedes + [old_id]))
         carried = _section(node.body, "## Alternatives considered") if node.contested_by else ""
-        if carried:   # dte:C17 the contest that produced the successor travels with it
+        if carried:   # dte:C17,C22 the contest that produced the successor travels with it, and settles it
             t = _insert_section(t, "## Alternatives considered",
                                 "Carried from %s, which this node supersedes.\n\n%s" % (old_id, carried))
+            if not new.contested_by:
+                t = set_field(t, "contested_by", node.contested_by)
+                t = append_history(t, "- %s settled by the contest of %s, which it supersedes (contested by %s)."
+                                   % (datetime.date.today().isoformat(), old_id, node.contested_by))
         write_text(new.path, t.replace("\n", nl))
         rewrite_references(tree, old_id, new_id)
     fate = retire_node(tree, node, action, new_id, args.by, args.authorized_by,
@@ -1546,9 +1633,16 @@ authority = A:human, B:orchestrator, C+:subagent
 # decisions/RETIRED burns the number); keep sets a status instead.
 retire = delete
 #
-# scope checks (advisory). docs: artifacts that describe decisions rather than
-# implement them; they do not count as reach.
+# Layers below the tree (B37): globs that say what kind of artifact cites a node.
+# The tree holds why; specs hold what; code holds how; tests enforce; agent
+# instructions carry process rules. show prints each as a derived list and a
+# node never stores any of it. docs describe and do not count as reach.
 docs = *.md, docs/*
+specs = specs/*, spec/*, *.spec.md
+tests = tests/*, test/*, test_*, *_test.*, *.test.*
+agents = CLAUDE.md, AGENTS.md, .claude/*
+#
+# scope checks (advisory).
 broad_fraction = 0.3
 broad_min = 5
 """
@@ -1599,6 +1693,28 @@ def split_ids(s):
     return [p.strip() for p in (s or "").split(",") if p.strip()]
 
 
+def node_body(args):
+    """The body from --body-file (verbatim, frontmatter stripped) or from the section flags.  dte:C20"""
+    if getattr(args, "body_file", None):
+        if not os.path.exists(args.body_file):
+            print("no such file: %s" % args.body_file)
+            return None
+        text = read_text(args.body_file).replace("\r\n", "\n")
+        if text.startswith("---"):
+            try:
+                _, text = parse_frontmatter(text)
+            except ValueError:
+                pass
+        if "## Decision" not in text or "## Why" not in text:
+            print("%s needs '## Decision' and '## Why' sections" % args.body_file)
+            return None
+        return "\n" + text.strip("\n") + "\n"
+    body = "\n## Decision\n\n%s\n\n## Why\n\n%s\n" % (args.decision or "TODO", args.why or "TODO")
+    if args.consequences:
+        body += "\n## Consequences\n\n%s\n" % args.consequences
+    return body
+
+
 def cmd_new(tree, args):
     """dte:B29"""
     ring = args.ring.upper()
@@ -1633,9 +1749,9 @@ def cmd_new(tree, args):
             return 2
         fields.insert(1, ("name", args.name))
         fields.append(("aliases", "[%s]" % args.name))   # so [[name]] resolves in Obsidian
-    body = "\n## Decision\n\n%s\n\n## Why\n\n%s\n" % (args.decision or "TODO", args.why or "TODO")
-    if args.consequences:
-        body += "\n## Consequences\n\n%s\n" % args.consequences
+    body = node_body(args)
+    if body is None:
+        return 2
     dest_dir = os.path.join(tree.decisions_dir, ring)
     os.makedirs(dest_dir, exist_ok=True)
     dest = os.path.join(dest_dir, new_id + ".md")
@@ -1643,6 +1759,150 @@ def cmd_new(tree, args):
     print('created %s "%s" at %s' % (new_id, args.title, tree.rel(dest)))
     todo = [] if (args.decision and args.why) else ["fill in the TODO sections"]
     print("  " + "; ".join(todo + ["cite it as %s from what it governs" % cite_text([new_id])]))
+    return 0
+
+
+IMPORT_FIELDS = KNOWN_FIELDS - {"id", "superseded_by", "supersedes", "conflicts_with"} | {"ring"}
+
+
+def cmd_import(tree, args):
+    """Re-home an existing corpus: one markdown file per node, every property carried
+    through, parents by name or id, ids allocated parent-first.  dte:B33,C20"""
+    tree.validate()
+    src = os.path.abspath(args.dir)
+    if not os.path.isdir(src):
+        print("no such directory: %s" % args.dir)
+        return 2
+    items = []
+    for fn in sorted(os.listdir(src)):
+        if not fn.endswith(".md"):
+            continue
+        path = os.path.join(src, fn)
+        try:
+            data, body = parse_frontmatter(read_text(path).replace("\r\n", "\n"))
+        except ValueError as e:
+            print("%s: %s" % (fn, e))
+            return 2
+        data = _normalise(data)
+        key = os.path.splitext(fn)[0]
+        items.append((key, data, body, path))
+    errors = []
+    names = {n.name: n.id for n in tree.nodes.values() if n.name and n.in_effect}
+    keys = {}
+    for key, data, body, path in items:
+        ring = str(data.get("ring") or "").upper()
+        if not re.match(r"^[A-Z]$", ring):
+            errors.append("%s: needs ring: <letter>" % key)
+        for f in data:
+            if f not in IMPORT_FIELDS:
+                errors.append("%s: unknown property %r; import carries only node properties (B33)" % (key, f))
+        if not data.get("title"):
+            errors.append("%s: title is required" % key)
+        if "## Decision" not in body or "## Why" not in body:
+            errors.append("%s: body needs '## Decision' and '## Why'" % key)
+        name = str(data.get("name") or "")
+        if name and not NAME_RE.match(name):
+            errors.append("%s: name %r is not a camelCase identifier" % (key, name))
+        if name and (name in names or name in keys):
+            errors.append("%s: name %r is already taken" % (key, name))
+        for handle in (key, name):
+            if handle:
+                keys[handle] = key
+    if errors:
+        print("\n".join(errors))
+        return 2
+    # parents: an existing id, an existing name, or another file in the batch (by file name or name)
+    by_key = {k: (d, b, p) for k, d, b, p in items}
+    def parent_ref(ref):
+        if ref in tree.nodes:
+            return ("id", ref)
+        if ref in names:
+            return ("id", names[ref])
+        if ref in keys:
+            return ("batch", keys[ref])
+        return None
+    order, seen, visiting = [], set(), set()
+    def visit(key):
+        if key in seen:
+            return True
+        if key in visiting:
+            errors.append("%s: parents form a cycle" % key); return False
+        visiting.add(key)
+        data = by_key[key][0]
+        ps = data.get("parents") or []
+        for ref in (ps if isinstance(ps, list) else [ps]):
+            ref = _scalar(str(ref))
+            got = parent_ref(ref)
+            if got is None:
+                errors.append("%s: parent %r is not an existing node or a file in the batch" % (key, ref)); return False
+            if got[0] == "batch" and not visit(got[1]):
+                return False
+        visiting.discard(key); seen.add(key); order.append(key)
+        return True
+    for key, _, _, _ in items:
+        visit(key)
+    if errors:
+        print("\n".join(errors))
+        return 2
+    today = datetime.date.today().isoformat()
+    source = args.source or os.path.relpath(src, tree.root).replace(os.sep, "/")
+    counters = {}
+    assigned = {}
+    written = []
+    for key in order:
+        data, body, path = by_key[key]
+        ring = str(data["ring"]).upper()
+        ps = data.get("parents") or []
+        parents = []
+        for ref in (ps if isinstance(ps, list) else [ps]):
+            kind, val = parent_ref(_scalar(str(ref)))
+            parents.append(val if kind == "id" else assigned[val])
+        err = check_parents(tree, ring, [p for p in parents if p in tree.nodes]) if all(p in tree.nodes for p in parents) else None
+        for pid in parents:
+            pring = tree.nodes[pid].ring if pid in tree.nodes else pid[0]
+            if ring_depth(pring) >= ring_depth(ring):
+                err = "parent %s is not shallower than ring %s" % (pid, ring)
+        if ring != "A" and not parents:
+            err = "a ring %s node needs parents" % ring
+        if ring == "A" and parents:
+            err = "ring A nodes cannot have parents"
+        if err:
+            print("%s: %s" % (key, err))
+            for w in written:
+                os.remove(w)
+            return 2
+        if ring not in counters:
+            counters[ring] = next_id(tree, ring)
+        new_id = counters[ring]
+        counters[ring] = ring + str(int(new_id[1:]) + 1)
+        assigned[key] = new_id
+        fields = [("id", new_id)]
+        if data.get("name"):
+            fields.append(("name", str(data["name"])))
+        fields += [("title", fm_str(str(data["title"]))), ("status", str(data.get("status") or "active")),
+                   ("parents", parents), ("supersedes", []), ("superseded_by", ""), ("conflicts_with", []),
+                   ("made_by", str(data.get("made_by") or "ai")), ("by", str(data.get("by") or args.by)),
+                   ("date", str(data.get("date") or today)), ("ratified_by", str(data.get("ratified_by") or ""))]
+        for f in ("authorized_by", "contested_by", "confidence", "tags", "cssclasses"):
+            if data.get(f):
+                v = data[f]
+                fields.append((f, "[%s]" % ", ".join(str(x) for x in v) if isinstance(v, list) else str(v)))
+        if data.get("name"):
+            fields.append(("aliases", "[%s]" % data["name"]))
+        text = build_frontmatter(fields) + "\n" + body.strip("\n") + "\n"
+        text = append_history(text, "- %s imported from %s (%s) by %s." % (today, source, key, args.by))
+        if data.get("ratified_by"):
+            text = append_history(text, "- %s ratified by %s, carried by the import." % (today, data["ratified_by"]))
+        dest_dir = os.path.join(tree.decisions_dir, ring)
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, new_id + ".md")
+        write_text(dest, text)
+        written.append(dest)
+        tree.nodes[new_id] = Node(dest, dict((k, v) for k, v in fields), body)
+        print("  %s  <-  %s  %s" % (new_id, key, str(data["title"])[:70]))
+    print("imported %d nodes from %s. They are re-homed content: no contest is owed at import (B28, B33)."
+          % (len(written), source))
+    print("  next: dte validate; cite each from what it governs; remove %s when done." % args.dir)
     return 0
 
 
@@ -1686,13 +1946,16 @@ def cmd_show(tree, args):
     print("  children (%d):" % len(kids))
     for c in kids:
         print("    " + tree.nodes[c].label())
-    hits = defaultdict(list)
-    for rel, ln, cid, r in tree.citations:
-        if r == i:
-            hits[rel].append(ln)
-    print("  citing artifacts (%d):" % len(hits))
-    for rel in sorted(hits):
-        print("    %s  lines %s" % (rel, ", ".join(str(x) for x in sorted(hits[rel]))))
+    by_layer = tree.cited_by(i)
+    n_hits = sum(len(v) for v in by_layer.values())
+    print("  citing artifacts (%d), derived from citations, never stored here:" % n_hits)
+    for layer in ("specs", "code", "tests", "agents", "docs"):
+        hits = by_layer.get(layer)
+        if not hits:
+            continue
+        print("    %s:" % tree.LAYER_LABEL[layer])
+        for rel in sorted(hits):
+            print("      %s  lines %s" % (rel, ", ".join(str(x) for x in sorted(hits[rel]))))
     if node.supersedes:
         print("  supersedes: " + ", ".join(node.supersedes))
     if node.superseded_by:
@@ -1730,6 +1993,27 @@ def cmd_find(tree, args):
     if not n:
         print("no matches for %r" % args.text)
     return 0
+
+
+def cmd_authorize(tree, args):
+    """Record a human's go-ahead on an existing node: authorized_by plus a History line.  dte:C21,B11"""
+    tree.validate()
+    code = 0
+    for i in args.ids:
+        node = tree.nodes.get(i)
+        if node is None:
+            print("unknown id: %s (%s)" % (i, tree.retired_hint(i)))
+            code = 2
+            continue
+        text = read_text(node.path)
+        nl = "\r\n" if "\r\n" in text else "\n"
+        text = text.replace("\r\n", "\n")
+        text = set_field(text, "authorized_by", args.by)
+        text = append_history(text, "- %s authorized by %s%s." % (
+            datetime.date.today().isoformat(), args.by, (": " + args.note) if args.note else ""))
+        write_text(node.path, text.replace("\n", nl))
+        print('authorized %s "%s" by %s' % (i, node.summary, args.by))
+    return code
 
 
 def cmd_ratify(tree, args):
@@ -1796,6 +2080,12 @@ def comment_line(ext, text):
     return "# " + text
 
 
+def _citation_only(line):
+    rest = LINK_RE.sub("", CITE_RE.sub("", line))
+    rest = re.sub(r"[\s,]", "", rest)
+    return all(c in "#/*<!->;%'\"-{}()" for c in rest)
+
+
 def cmd_cite(tree, args):
     """dte:C14"""
     ids = split_ids(args.ids)
@@ -1824,10 +2114,12 @@ def cmd_cite(tree, args):
             if lines[k].strip() == "---":
                 at = k + 1
                 break
-    # an existing top-of-file citation line: append to it
+    # an existing top-of-file citation line: append to it, but only when the line holds
+    # nothing but the comment marker and the citation; a line-level citation inside a
+    # sentence is about one block and is left alone
     for k in range(at, min(at + 3, len(lines))):
         have = cited_ids(lines[k])
-        if have:
+        if have and _citation_only(lines[k]):
             new = [x for x in ids if x not in have]
             if not new:
                 print("%s already cites %s" % (rel, ", ".join(ids)))
@@ -1882,12 +2174,13 @@ def cmd_brief(tree, args):
         print("     write decisions/inbox/<slug>.md and ask %s." % holder_of(prev, CONFIG))
     else:
         print("  2. You hold the core. Nothing is above you.")
-    print("  3. Cite what your work serves: `python %s cite <file> <ID>`. Refer to every decision as ID plus its title." % tool)
+    print("  3. Cite what your work serves: `python %s cite <file> <ID>`. Refer to every decision as ID plus its name." % tool)
     print("  4. Never change a decision made or ratified by a human. Before you finish, run")
     print("     `DTE_RING=%s python %s validate`; it must print OK." % (ring, tool))
     print("  5. Before acting under a node marked unratified and not contested, run `python %s contest <ID>`" % tool)
     print("     and follow it: build the alternatives, scope their cost, judge by the parents, record the verdict.")
     print("     A contested or ratified node is settled: act on it and never re-ask (A7, B28).")
+    print("     A node marked imported was re-homed, not decided; its contest is owed before the first new work under it.")
     print()
     print("Decisions above your ring that bind you%s (%d):" % (scope_note, len(above)))
     cur = None
@@ -2139,6 +2432,8 @@ def record_contest(tree, node, args):
     write_text(node.path, text.replace("\n", nl))
     tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
     print('recorded contest on %s "%s": %s wins' % (node.id, node.summary, args.chosen))
+    if args.chosen != "keep" and (args.title or args.retire):   # dte:C22 one step from verdict to tree
+        return settle_contest(tree, node, args)
     if args.chosen == "keep":
         print("  %s is settled; act on it without re-asking until a human ratifies or supersedes it (A7, B28)" % node.id)
     elif args.chosen == "deletion":
@@ -2147,6 +2442,43 @@ def record_contest(tree, node, args):
         print("  next: python %s new %s --title ... --parents %s   then   python %s retire %s --by <you> --superseded-by NEW"
               % (tool, node.ring, ",".join(node.parents), tool, node.id))
     return 0
+
+
+def settle_contest(tree, node, args):
+    """Write the winner (opposite or variant, from --title and a body) at the same ring with the
+    same parents, then retire the loser superseded by it; or revert it for deletion.  dte:C22"""
+    if args.chosen == "deletion":
+        if not args.retire:
+            return 0
+        new_id = None
+    else:
+        if not args.title:
+            return 0
+        body = node_body(args)
+        if body is None:
+            return 2
+        new_id = next_id(tree, node.ring)
+        fields = [("id", new_id)]
+        if args.name:
+            if not NAME_RE.match(args.name):
+                print("a name is a camelCase identifier like shareImpl")
+                return 2
+            fields.append(("name", args.name))
+        fields += [("title", fm_str(args.title)), ("status", "active"), ("parents", list(node.parents)),
+                   ("supersedes", []), ("superseded_by", ""), ("conflicts_with", []),
+                   ("made_by", "ai"), ("by", args.by), ("date", datetime.date.today().isoformat()),
+                   ("ratified_by", ""), ("contested_by", args.by)]
+        if args.name:
+            fields.append(("aliases", "[%s]" % args.name))
+        text = build_frontmatter(fields) + body
+        text = append_history(text, "- %s created as the %s that won the contest of %s; by %s."
+                              % (datetime.date.today().isoformat(), args.chosen, node.id, args.by))
+        dest = os.path.join(tree.decisions_dir, node.ring, new_id + ".md")
+        write_text(dest, text)
+        print('created %s "%s" at %s' % (new_id, args.title, tree.rel(dest)))
+    fresh = Tree(tree.root, tree.decisions_dir)
+    ns = argparse.Namespace(id=node.id, superseded_by=new_id, by=args.by, authorized_by=args.authorized_by)
+    return cmd_retire(fresh, ns)
 
 
 def cmd_conflict(tree, args):
@@ -2226,7 +2558,9 @@ def cmd_init(tree, args):
     """dte:C13"""
     root = os.path.abspath(args.root)
     made, kept = [], []
-    for rel, content in (("dte.cfg", CFG_TEMPLATE), (".dteignore", IGNORE_TEMPLATE)):
+    me = os.path.basename(__file__)
+    ignore = IGNORE_TEMPLATE + "# The dte tool itself: its dte: tokens belong to DTE's own tree, not this one.\n%s\n" % me
+    for rel, content in (("dte.cfg", CFG_TEMPLATE), (".dteignore", ignore)):
         p = os.path.join(root, rel)
         if os.path.exists(p):
             kept.append(rel)
@@ -2247,7 +2581,8 @@ def cmd_init(tree, args):
     print("next:")
     print("  1. write the core: dte new A --title \"<goal>\" --by <owner> --made-by human   (three to six of these)")
     print("  2. edit dte.cfg: authority map, docs globs, retire mode")
-    print("  3. put the agent protocol (CLAUDE.md from the DTE repo) into your agent instructions")
+    print("  3. vendor DTE's SPEC.md, CLAUDE.md and ADOPTING.md next to the tool, ignore them in .dteignore,")
+    print("     and have your agent harness load them at session start (a hook or a slash command)")
     print("  4. dte validate, then dte coverage: that number is the adoption gauge")
     return 0
 
@@ -2259,6 +2594,7 @@ def main(argv=None):
     ap.add_argument("--decisions", default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
+    v.add_argument("--full", action="store_true", help="list every unratified node instead of the count (C23)")
     v.add_argument("--as", dest="as_ring", default=os.environ.get("DTE_RING") or None, metavar="RING",
                    help="check changed nodes against an agent's ring (B15); default $DTE_RING")
     t = sub.add_parser("tree")
@@ -2297,6 +2633,8 @@ def main(argv=None):
     n.add_argument("ring")
     n.add_argument("--title", required=True)
     n.add_argument("--name", default=None, help="readable camelCase handle, unique; becomes the Obsidian alias")
+    n.add_argument("--body-file", dest="body_file", default=None,
+                   help="markdown file whose sections become the body verbatim (C20); beats --decision/--why")
     n.add_argument("--by", required=True)
     n.add_argument("--parents", default=None, help="comma-separated parent ids")
     n.add_argument("--made-by", dest="made_by", default="ai", help="ai | human | joint")
@@ -2308,6 +2646,15 @@ def main(argv=None):
     n.add_argument("--authorized-by", dest="authorized_by", default=None,
                    help="human authorising an agent to write this node above its ring")
     sub.add_parser("show").add_argument("id")
+    sub.add_parser("unratified")
+    im = sub.add_parser("import")
+    im.add_argument("dir", help="folder of markdown files: frontmatter ring, title, parents (by name, id or file), body")
+    im.add_argument("--by", required=True, help="who ran the import")
+    im.add_argument("--source", default=None, help="label for the History line; defaults to the folder")
+    au = sub.add_parser("authorize")
+    au.add_argument("ids", nargs="+")
+    au.add_argument("--by", required=True, help="the human authorising")
+    au.add_argument("--note", default=None)
     sub.add_parser("find").add_argument("text")
     ra = sub.add_parser("ratify")
     ra.add_argument("ids", nargs="+")
@@ -2331,6 +2678,14 @@ def main(argv=None):
     ct.add_argument("--note", default=None, help="the alternatives, their scoped costs, and the verdict")
     ct.add_argument("--file", default=None, help="markdown file holding the same, appended before --note")
     ct.add_argument("--again", action="store_true", help="contest a node that was already contested")
+    ct.add_argument("--title", default=None, help="with --record and a non-keep verdict: write the winner with this title (C22)")
+    ct.add_argument("--name", default=None, help="the winner's camelCase name")
+    ct.add_argument("--body-file", dest="body_file", default=None, help="the winner's body; or use --decision/--why")
+    ct.add_argument("--decision", default=None)
+    ct.add_argument("--why", default=None)
+    ct.add_argument("--consequences", default=None)
+    ct.add_argument("--retire", action="store_true", help="with --chosen deletion: revert the node now")
+    ct.add_argument("--authorized-by", dest="authorized_by", default=None)
     cf = sub.add_parser("conflict")
     cf.add_argument("a")
     cf.add_argument("b")
@@ -2356,6 +2711,7 @@ def main(argv=None):
         "next": cmd_next, "scope": cmd_scope, "inbox": cmd_inbox, "outbox": cmd_outbox, "place": cmd_place,
         "authority": cmd_authority, "move": cmd_move, "retire": cmd_retire,
         "new": cmd_new, "show": cmd_show, "find": cmd_find, "ratify": cmd_ratify,
+        "unratified": cmd_unratified, "import": cmd_import, "authorize": cmd_authorize,
         "conflict": cmd_conflict, "reparent": cmd_reparent, "set": cmd_set, "contest": cmd_contest, "retired": cmd_retired, "export": cmd_export,
         "init": cmd_init, "cite": cmd_cite, "brief": cmd_brief, "hook": cmd_hook,
     }[args.cmd](tree, args)

@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B32,B29,B27,B30,B31,C19 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B32,B29,B27,B30,B31,C19,B33,B34,B35,B36,B37,C20,C21,C22,C23,C24 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section
@@ -136,6 +136,8 @@ Optional. One line per event: created, ratified, moved, superseded.
 - Wikilink: `[[B3]]` or `[[B3|text]]` is the same citation in Obsidian's
   spelling (dte:B30, dte:C19). Both forms are read everywhere; `links` in
   `dte.cfg` picks which one the tool writes.
+- Examples in prose use the placeholder ring `ZZ`: `dte:ZZ1`, `[[ZZ1]]`. Two
+  letters is not an ID shape, so it is never a citation and never an error.
 - Place it in a comment for code, or in prose or an HTML comment for docs.
   A file-level citation at the top says why the file exists. Line-level
   citations say why a specific block exists.
@@ -153,7 +155,9 @@ Optional. One line per event: created, ratified, moved, superseded.
   none. Every parent is in a strictly shallower ring.
 - **R2 (dte:B4)** Two active nodes that contradict each other are resolved by
   ring: shallower wins. Two contradicting nodes in the *same* ring are an
-  error; resolve by superseding one or moving one.
+  error; resolve by superseding one or moving one. A node that narrows,
+  excepts or supports another belongs below it as a child (dte:B35): a
+  same-ring contradiction usually means a refinement was filed as a sibling.
 - **R3 (dte:B24, dte:C11)** A node is retired only through the ledger.
   In delete mode the file is removed and git keeps the text; in keep mode
   the file stays with `status` set. A deleted node file with no ledger
@@ -165,7 +169,10 @@ Optional. One line per event: created, ratified, moved, superseded.
   dealt with, not forgotten.
 - **R5 (dte:B7)** Every node records `made_by` and `by`. AI-made nodes may be
   `active` without ratification so agents are not blocked, but tools surface
-  every unratified AI node until a human sets `ratified_by`.
+  every unratified AI node until a human sets `ratified_by`. A decision
+  nobody remembers making is reconstructed as `made_by: ai`, low confidence
+  (dte:B34). A hand edit to a body adds a History line; validate flags a
+  body change without one (dte:B36).
 - **R6 (dte:A2)** The goal is total coverage: every artifact cites at least one
   node. Coverage below 100% is not an error (adoption is incremental, dte:B22)
   but it is always reported.
@@ -180,10 +187,19 @@ Optional. One line per event: created, ratified, moved, superseded.
 ## 7. Operations
 
 **Add a decision.** `dte new <ring> --name camelCase --title "..." --by <name> --parents A1
-[--decision "..." --why "..."]`. The tool allocates the ID and writes the
+[--decision "..." --why "..." | --body-file NODE.md]`. The tool allocates the ID and writes the
 node; unfilled sections are `TODO` and validate warns until they are
-written. Cite it from the artifacts it produces. Run `dte validate`.
+written. `--body-file` takes the sections verbatim (dte:C20). Cite it from the artifacts it produces. Run `dte validate`.
 Frontmatter is never hand-edited (dte:B29).
+
+**Import an existing corpus (dte:B33, dte:C20).** `dte import <dir> --by
+<who>` lifts one markdown file per node: frontmatter `ring`, `title`,
+optional `name`, `parents` (ids, names, or other files in the batch by name)
+and any node property the source already carries, all written unchanged;
+the body verbatim. IDs are allocated parent-first. Each node gets one
+History line, `imported from <source>`, and that line is the mark: an
+imported node is re-homed content, not a new decision, and owes its contest
+before the first new work under it, not at import.
 
 **Supersede.** Write the new node. Run `dte blast OLD`. Then
 `dte retire OLD --by <name> --superseded-by NEW [--authorized-by <human>]`:
@@ -231,8 +247,14 @@ goes to History.
 `proposed` to `active`. A ratified node is human-held from then on
 (dte:B11).
 
-**Contest (dte:B28).** An unratified node is not a block, but before an
-agent first acts under it the agent runs `dte contest <ID>` (dte:C17). The
+**Authorize (dte:C21).** `dte authorize <ID> --by <human> [--note ...]`
+records a human's go-ahead on a node that already exists: `authorized_by`
+plus a History line. It is how an owner's "go ahead" reaches a node an
+agent drafted above its ring, and the only writer of that field.
+
+**Contest (dte:B28).** An unratified node is not a block, but before a
+tree agent first builds new work under it (a child, a spec, an artifact)
+the agent runs `dte contest <ID>` (dte:C17). An import owes none (dte:B33). The
 tool prints the node, its parents as the rubric, and four slots: keep,
 opposite, deletion, variant. The agent builds each alternative far enough to
 scope its cost, judges them against the parents alone, and records the
@@ -240,7 +262,9 @@ verdict with `dte contest <ID> --record --chosen <slot> --by <name> --note
 "..."`. Parents are read, never reopened. Siblings are not touched. Children
 and citing artifacts count for nothing, not even as cost: a better node may
 need none of them. If keep did not win, the agent writes the winner with
-`new` and retires the loser. A contested node is settled (dte:A7): it is
+`new` and retires the loser, or does both in the same run with `--record
+--chosen variant --title ... --body-file ...` (dte:C22); a successor that
+carries the loser's contest is marked contested by it. A contested node is settled (dte:A7): it is
 acted on without re-asking until a human ratifies it or an agent supersedes
 it; a second contest needs `--again`. Ratification then reviews a comparison
 with costs, not a bare proposal.
@@ -344,15 +368,25 @@ may decide at any ring; a human-made node is valid anywhere.
 | `broad_fraction`| `0.3`   | share of nodes or artifacts that makes a node broad (C8) |
 | `broad_min`     | `5`     | minimum count before the share is considered (C8) |
 | `retire`        | `delete`| `delete` removes retired files (needs git); `keep` sets status (B24) |
+| `specs`, `tests`, `agents` | see cfg | globs for the layers below the tree; `show` derives per-layer lists (B37, C24) |
+| `scan_self`     | `off`   | scan the running tool file; only DTE's own repo sets it (C24) |
 | `links`         | `token` | `token` writes `dte:ID`; `wikilink` writes `[[ID]]` for Obsidian (B30, C19) |
 
-## 12. Scope checks (dte:B21, dte:C8)
+## 12. Scope checks and layers (dte:B21, dte:C8, dte:B37)
+
+The tree holds why. Below it, artifacts are told apart by the `dte.cfg`
+globs: `specs` (what to build), `tests` (what enforces), `agents`
+(instruction files that carry process rules), `docs` (what describes), and
+everything else is code. A node stores none of this; `show` derives
+"specified by", "implemented by", "enforced by", "instructs" and
+"described by" from citations at read time, and `coverage` lists in-effect
+nodes with no citing test.
 
 `dte scope` is advisory and never fails. It reports:
 
-- **no reach**: a non-core node with no descendants and no implementing
-  artifact. Describing documents (the `docs` globs) do not count. Retire
-  it, or cite it from what it governs.
+- **no reach**: a non-core node with no descendants and no citing spec,
+  code, test or agent instruction. Describing documents (the `docs` globs)
+  do not count. Retire it, or cite it from what it governs.
 - **broad**: a non-core node whose descendants or implementing files are at
   least `broad_fraction` of the whole, with at least `broad_min` of them.
   Promote it, or split it into several decisions.
@@ -373,7 +407,9 @@ runtime, and implements (dte:B29): asking the tree with `show`, `find`,
 `tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`,
 `scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it
 with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18), `contest` (dte:C17), `move`,
-`retire`, `inbox`, `outbox` (dte:B31), `place`; and `validate` (with `--as`, defaulting to `$DTE_RING`),
+`retire`, `inbox`, `outbox` (dte:B31), `place`, `import` (dte:C20),
+`authorize` (dte:C21), `unratified` (dte:C23); and `validate` (a summary
+by default, `--full` for the whole unratified list) (with `--as`, defaulting to `$DTE_RING`),
 `export` (JSON: nodes, citations, ledger, inbox; the join surface for
 structural tools, dte:C12), `init` (scaffold, dte:C13), and `hook`
 (pre-commit validate, dte:C14).

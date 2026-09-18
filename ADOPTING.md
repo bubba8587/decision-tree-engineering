@@ -1,4 +1,4 @@
-<!-- dte:A4,B22,B8 -->
+<!-- dte:A4,B22,B8,B33,B34,C21 -->
 # Adopting DTE in an existing project
 
 Written for a large, live codebase as the target, but nothing here is specific
@@ -8,13 +8,21 @@ and only goes up. Nothing fails until the tree itself is inconsistent.
 ## Day one (an hour)
 
 1. Copy `tools/dte.py` into the project and run `python dte.py init`. It
-   creates `decisions/`, a fully commented `dte.cfg`, and a `.dteignore`;
+   creates `decisions/`, a fully commented `dte.cfg`, and a `.dteignore`
+   that already skips the tool itself (its citations belong to DTE's tree);
    add vendored, generated, and binary directories to the ignore file.
+   Vendor DTE's rule text next to the tool, in reading order: `CLAUDE.md`
+   (the protocol), `SPEC.md`, this file, `README.md`. Ignore them the same
+   way. Point your agent harness at them with a session-start hook or a
+   slash command; that is the harness's job, not the tree's.
 2. Write the core. Sit with the owner and state the project's abstract goals
    in one or two sentences each. Three to six of them:
-   `dte new A --title "..." --by <owner> --made-by human --decision "..." --why "..."`.
+   `dte new A --name goalName --title "..." --by <owner> --made-by human --decision "..." --why "..."`.
    Everything else will hang off these, so get the wording right and keep
-   them abstract: goals, not features.
+   them abstract: goals, not features. If an agent does this for the owner,
+   the owner's "go ahead" is the authorization: the agent drafts each A node
+   as `made_by: ai`, unratified, then runs `dte authorize <ID> --by <owner>`
+   so `validate --as B` accepts the change; the owner ratifies later (C21).
 3. Run `python dte.py validate`. It should pass with zero citations.
 4. Run `python dte.py coverage`. That number is the adoption gauge.
 5. Optionally `python dte.py hook`, so a commit that breaks the tree is
@@ -31,9 +39,18 @@ Pick one subsystem the team understands well. For it:
   citations, written by hand, are for blocks whose reason differs from the
   file's.
 - Decisions nobody remembers making still get a node. Write what you can
-  infer, `made_by: human`, `by: unknown (reconstructed)`, `confidence: low`.
-  A low-confidence node is far more useful than a gap: it is a question the
+  infer as `made_by: ai`, `confidence: low`, with a History line naming the
+  evidence (B34). It stays unratified until the owner confirms it; a
+  low-confidence node is far more useful than a gap: it is a question the
   tree is now asking out loud.
+- An existing rule corpus is lifted in one run: one markdown file per rule
+  with `ring`, `title`, `parents` (by name) and whatever provenance the
+  source already records, then `dte import <dir> --by <you>` (B33). Nothing
+  is contested at import; a lifted node owes its contest when something is
+  first built under it.
+- A comment that explains *why* is a decision's rationale in the wrong
+  place. Move it into the node's Why and leave `dte:ID` behind. Comments
+  that explain *how* stay.
 - When the tree disagrees with the code, that is a finding. Either the code
   drifted (fix it, citing the node) or the decision changed silently (write
   the superseding node, retire the old one, walk the orphans).
@@ -42,8 +59,9 @@ Stop when validate is clean and coverage for that subsystem is 100%. Move on.
 
 ## Working with AI agents
 
-Put the protocol from `CLAUDE.md` into the project's agent instructions.
-From then on every agent session leaves a trail of `made_by: ai` nodes, and
+Vendor `CLAUDE.md` and have your harness load it; do not re-author it, and
+never re-create DTE's own decisions as nodes in your tree: your tree holds
+your decisions, DTE's rules stay DTE's. From then on every agent session leaves a trail of `made_by: ai` nodes, and
 the owner's job becomes ratification: read the unratified list at the end of
 each validate run, agree or supersede, set `ratified_by`.
 

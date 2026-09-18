@@ -78,15 +78,19 @@ permission is gone and the action becomes an inbox item instead.
 ## Before you act under an unratified node (B28)
 
 A node marked `unratified` and not `contested` gets one contest before you
-first act under it: `python tools/dte.py contest <ID>`. Build the
+first build new work under it (a child node, a spec, an artifact). A node
+marked `imported` was re-homed, not decided, and owes the same contest at
+the same moment, never at import (B33 importedNodes). To contest: `python tools/dte.py contest <ID>`. Build the
 alternatives it lists (keep, opposite, deletion, maybe a variant) far enough
 to scope their cost, judge them against the parents alone, pick one, and
 record it with `--record`. Parents are the rubric: read, never reopened.
 Siblings are not touched. Children and citing artifacts count for nothing,
 not even as cost. If keep lost, write the winner with `new` and retire the
 loser. After that the node is settled: act on it and never re-ask (A7).
-This is B28 "an unratified node gets one recorded contest: alternatives
-built, costed, judged by its parents; then settled".
+This is B28 oneContest "a tree agent owes an unratified node one recorded
+contest before the first new work under it; then it is settled". If keep
+loses, `--record --chosen variant --title ... --body-file ...` writes the
+winner and retires the loser in one run (C22 contestWritesWinner).
 
 ## When you talk about decisions (A5)
 
@@ -126,7 +130,11 @@ artifact.
 ## Before you say you are done
 
 - `python tools/dte.py validate --as <your ring>` must print `OK`. Warnings
-  are allowed; read them anyway. It fails if you touched a node above your
+  are allowed; read them anyway. It prints a summary; `dte unratified` has
+  the full list (C23 validateSummary).
+- If you edited a node's body by hand, add one History line saying what
+  changed and why; validate marks body changes and warns when the line is
+  missing (B36 bodyEditsLogged). It fails if you touched a node above your
   ring or a human-held node.
 - Validate ends with "Nodes changed in this working tree". Copy those lines
   into your report so the owner can ratify them. List anything you put in
