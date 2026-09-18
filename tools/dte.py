@@ -2430,6 +2430,8 @@ def cmd_contest(tree, args):
     print("Children of %s (%d) and artifacts citing it (%d) count for nothing: a better node may need none of them."
           % (node.id, len(kids), len(cites)))
     print("Do not reopen parents, siblings, or children in this contest.")
+    print("A Why that names the incident that forced the node is load-bearing; one that names none is")
+    print("preventive judgment and the thinner claim (B40 originInWhy). Weigh it so.")
     print()
     print("  keep      %s as written" % node.id)
     print("  opposite  the decision reversed")

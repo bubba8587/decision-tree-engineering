@@ -1061,6 +1061,11 @@ class TestFeedbackRound(Base):
         self.assertEqual(code, 2)
         self.assertIn("not a DTE checkout", out)
 
+    def test_contest_prompt_weighs_an_incident_free_why(self):
+        code, out = run(self.root, "contest", "B1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("names none is", out)
+
     def test_init_ignores_the_tool(self):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)
