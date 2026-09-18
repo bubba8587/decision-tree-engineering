@@ -184,6 +184,10 @@ Then say so in chat, with the title. Validate and tree print PENDING PLACEMENT w
 
 **Authorise an override (dte:B11).** To retire or move a human-held node, a human sets `authorized_by:` on it. An AI may prepare the change but the field must name a person.
 
+**Spec (dte:A8, dte:C26).** `dte spec <ID> [--out FILE]` renders a spec skeleton from a node: its citation at the top, its Decision as the purpose, its parents' Decisions and its Consequences as constraints, every descendant as a covered decision, and empty Requirements, Out of scope and Gaps. A tree agent fills it. The spec cites the node; the node never lists its specs (dte:B37).
+
+**Build to a spec (dte:B42, dte:C27).** `dte brief --builder <spec>` prints the builder rules and the spec: build exactly what it says, cite the IDs it names, decide nothing, never read `decisions/`, and when the spec is silent stop and file `dte gap <spec> --title "..." --by <who>`. A gap is an inbox item with `kind: gap` naming the spec; `inbox` lists gaps apart from decisions, `place` refuses them, and whoever holds the spec answers in the spec and removes the file.
+
 ## 8. Blast radius (dte:C2)
 
 For node X:
@@ -244,7 +248,7 @@ The thresholds are guesses until calibrated on a large tree. Ring balance (equal
 
 ## 13. Tooling contract (dte:B6)
 
-A conforming tool is a single file with no dependencies beyond the language runtime, and implements (dte:B29): asking the tree with `show`, `find`, `tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`, `scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18), `contest` (dte:C17), `move`, `retire`, `inbox`, `outbox` (dte:B31), `place`, `import` (dte:C20), `authorize` (dte:C21), `unratified` (dte:C23); and `validate` (a summary by default, `--full` for the whole unratified list) (with `--as`, defaulting to `$DTE_RING`), `export` (JSON: nodes, citations, ledger, inbox; the join surface for structural tools, dte:C12), `init` (scaffold, dte:C13), `vendor` (copy DTE's rule text and a render of its decisions into an ignored directory, stamped with the source commit, dte:C25, dte:B39), and `hook` (pre-commit validate, dte:C14). Every output that names a node prints `ID name: title` unless summaries are off. The reference implementation is `tools/dte.py`. Exit code is non-zero when `validate` finds errors.
+A conforming tool is a single file with no dependencies beyond the language runtime, and implements (dte:B29): asking the tree with `show`, `find`, `tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`, `scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18), `contest` (dte:C17), `move`, `retire`, `inbox`, `outbox` (dte:B31), `place`, `import` (dte:C20), `authorize` (dte:C21), `unratified` (dte:C23), `spec` (dte:C26), `gap` and `brief --builder` (dte:C27); and `validate` (a summary by default, `--full` for the whole unratified list) (with `--as`, defaulting to `$DTE_RING`), `export` (JSON: nodes, citations, ledger, inbox; the join surface for structural tools, dte:C12), `init` (scaffold, dte:C13), `vendor` (copy DTE's rule text and a render of its decisions into an ignored directory, stamped with the source commit, dte:C25, dte:B39), and `hook` (pre-commit validate, dte:C14). Every output that names a node prints `ID name: title` unless summaries are off. The reference implementation is `tools/dte.py`. Exit code is non-zero when `validate` finds errors.
 
 ## 14. Open questions (not yet decided)
 

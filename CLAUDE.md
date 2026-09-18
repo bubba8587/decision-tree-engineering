@@ -5,7 +5,7 @@ This project uses Decision Tree Engineering. Read `SPEC.md` once. Then follow th
 
 ## Your ring
 
-You operate at a ring. If the human or the agent that spawned you told you which, use that. In this repo, if nobody said, assume ring **B**: the owner holds A, and subagents you spawn get C or deeper. Put the output of `python tools/dte.py brief C [--under <ID>]` at the top of every subagent's instructions and set `DTE_RING=C` in its environment (B27). `python tools/dte.py authority` shows who holds each ring and therefore whom to ask.
+You operate at a ring. If the human or the agent that spawned you told you which, use that. In this repo, if nobody said, assume ring **B**: the owner holds A, and subagents you spawn get C or deeper. Put the output of `python tools/dte.py brief C [--under <ID>]` at the top of every subagent's instructions and set `DTE_RING=C` in its environment (B27). `python tools/dte.py authority` shows who holds each ring and therefore whom to ask. A subagent that only builds gets no ring and no tree: write the spec (`python tools/dte.py spec <ID> --out specs/<name>.md`, then fill it) and put `python tools/dte.py brief --builder specs/<name>.md` at the top of its instructions (B42 builderAutonomy, C27 builderBrief). Gaps it files land in the inbox addressed to the spec; answer them in the spec.
 
 The map binds you, not the owner. The owner may decide at any ring.
 

@@ -77,6 +77,8 @@ python tools/dte.py unratified                  # the full list validate only co
 # check and integrate
 python tools/dte.py validate --as C   # consistency; as an agent at ring C, did I overstep?
 python tools/dte.py brief C --under B3   # the block to hand a subagent working at ring C
+python tools/dte.py spec B3 --out specs/b3.md   # a spec skeleton from a node, for a tree agent to fill
+python tools/dte.py brief --builder specs/b3.md # the block to hand a builder: spec only, no ring, no tree
 python tools/dte.py export --out tree.json   # nodes, citations, ledger, inbox: join it to your graph
 python tools/dte.py init              # scaffold a new project
 python tools/dte.py vendor --from ../DTE   # copy DTE's rules and decisions in, ignored, stamped

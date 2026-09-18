@@ -1102,6 +1102,50 @@ class TestFeedbackRound(Base):
         code, out = run(self.root, "validate")
         self.assertNotIn("[body changed", out)
 
+    def test_spec_skeleton_cites_node_and_lists_subtree(self):
+        write_file(self.root, "dte.cfg", "specs = specs/*\n")
+        code, out = run(self.root, "spec", "B1", "--out", os.path.join(self.root, "specs", "b1.md"))
+        self.assertEqual(code, 0, out)
+        text = self._read("specs/b1.md")
+        self.assertTrue(text.startswith("<!-- " + "dte" + ":B1 -->"), text[:40])
+        self.assertIn("## Purpose", text)
+        self.assertIn("- A1", text)          # parent as constraint
+        self.assertIn("- C1", text)          # descendant as covered decision
+        self.assertIn("## Requirements", text)
+        code, out = run(self.root, "show", "B1")
+        self.assertIn("specified by:", out)
+        code, out = run(self.root, "spec", "B1", "--out", os.path.join(self.root, "specs", "b1.md"))
+        self.assertEqual(code, 2)            # never overwrites
+
+    def test_gap_is_an_inbox_item_that_place_refuses(self):
+        write_file(self.root, "specs/b1.md", "<!-- " + "dte" + ":B1 -->\n# Spec\n")
+        code, out = run(self.root, "gap", os.path.join(self.root, "specs", "b1.md"), "--title", "Retry policy", "--by", "builder", "--note", "spec says nothing about retries")
+        self.assertEqual(code, 0, out)
+        self.assertIn("kind: gap", self._read("decisions/inbox/gap-retry-policy.md"))
+        code, out = run(self.root, "inbox")
+        self.assertIn("SPEC GAPS (1)", out)
+        self.assertNotIn("PENDING PLACEMENT", out)
+        code, out = run(self.root, "place", "gap-retry-policy", "C", "--by", "owner")
+        self.assertEqual(code, 2)
+        self.assertIn("spec gap, not a decision", out)
+        code, out = run(self.root, "validate")
+        self.assertEqual(code, 0, out)
+        os.remove(os.path.join(self.root, "specs", "b1.md"))
+        code, out = run(self.root, "validate")
+        self.assertIn("names a spec that does not exist", out)
+
+    def test_builder_brief_prints_rules_and_spec_without_ring(self):
+        write_file(self.root, "specs/b1.md", "<!-- " + "dte" + ":B1 -->\n# Spec\n\nbuild the thing\n")
+        code, out = run(self.root, "brief", "--builder", os.path.join(self.root, "specs", "b1.md"))
+        self.assertEqual(code, 0, out)
+        self.assertIn("BUILDER BRIEF", out)
+        self.assertIn("cite <file> B1", out)
+        self.assertIn("build the thing", out)
+        self.assertNotIn("Decisions above your ring", out)
+        self.assertNotIn("DTE_RING=", out)
+        code, out = run(self.root, "brief")
+        self.assertEqual(code, 2)
+
     def test_init_ignores_the_tool(self):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)

@@ -105,7 +105,7 @@ KNOWN_FIELDS = LIST_FIELDS | OBSIDIAN_FIELDS | {
     "id", "name", "title", "status", "superseded_by", "made_by", "by", "date",
     "ratified_by", "confidence", "authorized_by", "contested_by",
 }
-INBOX_FIELDS = {"name", "title", "proposed_ring", "ask", "made_by", "by", "date", "parents", "confidence"} | OBSIDIAN_FIELDS
+INBOX_FIELDS = {"name", "title", "proposed_ring", "ask", "made_by", "by", "date", "parents", "confidence", "kind", "spec"} | OBSIDIAN_FIELDS
 # The outbox: what a human changes in the vault and an agent must process. A note dropped in
 # decisions/outbox, an action tag on a node (a tags property or an inline #ratify, #retire, #contest, #ask),
 # or a ratified_by typed into the properties pane. Never a bare diff: an anonymous edit cannot
@@ -334,6 +334,8 @@ class InboxItem:
         self.ask = str(self.raw.get("ask") or "")
         self.made_by = str(self.raw.get("made_by") or "")
         self.by = str(self.raw.get("by") or "")
+        self.kind = str(self.raw.get("kind") or "decision")   # decision | gap  dte:C27
+        self.spec = str(self.raw.get("spec") or "")
         p = self.raw.get("parents") or []
         self.parents = [str(x) for x in (p if isinstance(p, list) else [p]) if str(x)]
 
@@ -514,6 +516,10 @@ class Tree:
             self.errors.append("%s: inbox item needs a title" % rel)
         if item.made_by not in MADE_BY:
             self.errors.append("%s: made_by must be one of %s" % (rel, sorted(MADE_BY)))
+        if item.kind not in ("decision", "gap"):
+            self.errors.append("%s: kind must be decision or gap" % rel)
+        if item.kind == "gap" and not os.path.isfile(os.path.join(self.root, item.spec)):
+            self.errors.append("%s: gap names a spec that does not exist: %s" % (rel, item.spec or "(none)"))
         self.inbox.append(item)
 
     def rel(self, path):
@@ -963,9 +969,17 @@ def cmd_unratified(tree, args):
 
 
 def print_inbox(tree):
-    """dte:B14"""
-    print("\nPENDING PLACEMENT (%d), no ID until placed:" % len(tree.inbox))
-    for it in tree.inbox:
+    """dte:B14, dte:C27"""
+    gaps = [it for it in tree.inbox if it.kind == "gap"]
+    decisions = [it for it in tree.inbox if it.kind != "gap"]
+    if gaps:
+        print("\nSPEC GAPS (%d), the spec is silent; whoever holds the spec answers in the spec, then removes the file:" % len(gaps))
+        for it in gaps:
+            print('  %s  "%s"  in %s  (%s by %s)' % (it.slug, it.title, it.spec, it.made_by, it.by))
+    if not decisions:
+        return
+    print("\nPENDING PLACEMENT (%d), no ID until placed:" % len(decisions))
+    for it in decisions:
         who = it.ask or (holder_of(it.proposed_ring, CONFIG) if it.proposed_ring else "the human")
         ring = ("proposed ring %s" % it.proposed_ring) if it.proposed_ring else "ring unknown"
         print('  %s  "%s"  (%s, %s by %s)' % (it.slug, it.title, ring, it.made_by, it.by))
@@ -1371,6 +1385,9 @@ def cmd_place(tree, args):
     item = next((it for it in tree.inbox if it.slug == args.slug), None)
     if item is None:
         print("no inbox item named %r; run: dte inbox" % args.slug)
+        return 2
+    if item.kind == "gap":
+        print("%s is a spec gap, not a decision: answer it in %s, then remove the file (C27)" % (args.slug, item.spec))
         return 2
     parents = [p.strip() for p in (args.parents or "").split(",") if p.strip()] or item.parents
     if ring == "A" and parents:
@@ -2196,6 +2213,14 @@ def cmd_cite(tree, args):
 
 def cmd_brief(tree, args):
     """dte:B27"""
+    if args.builder:
+        if not os.path.isfile(args.builder):
+            print("no such spec: %s" % args.builder)
+            return 2
+        return builder_brief(tree, args.builder)
+    if not args.ring:
+        print("brief needs a ring, or --builder <spec>")
+        return 2
     tree.validate()
     ring = args.ring.upper()
     if not re.match(r"^[A-Z]$", ring):
@@ -2245,6 +2270,103 @@ def cmd_brief(tree, args):
         print()
         print("Your subtree: `python %s tree --under %s`; read any node with `python %s show <ID>`."
               % (tool, args.under, tool))
+    return 0
+
+
+def spec_skeleton(tree, node):
+    """dte:C26, dte:A8"""
+    tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
+    out = [comment_line(".md", cite_text([node.id])), "", "# Spec: %s" % (node.name or node.id), "",
+           "Serves %s %s (ring %s). Filled by an agent that holds a ring; built by an agent that never reads the tree (B42)."
+           % (node.id, ("%s: %s" % (node.name, node.title)) if node.name else node.title, node.ring), "",
+           "## Purpose", "", _section(node.body, "## Decision").strip() or "TODO", "",
+           "## Constraints", ""]
+    for p in node.parents:
+        pn = tree.nodes.get(p)
+        if pn:
+            out.append("- %s %s: %s" % (pn.id, pn.name or pn.title, " ".join(_section(pn.body, "## Decision").split())))
+    cons = _section(node.body, "## Consequences").strip()
+    if cons:
+        out += [l for l in cons.split("\n") if l.strip()]
+    if not node.parents and not cons:
+        out.append("- TODO")
+    out += ["", "## Covered decisions", ""]
+    desc = tree.descendants(node.id)
+    for i in tree.ordered(desc):
+        c = tree.nodes[i]
+        if c.in_effect:
+            out.append("- %s %s: %s" % (c.id, c.name or c.title, " ".join(_section(c.body, "## Decision").split())))
+    if not desc:
+        out.append("- none yet; requirements below are decided here and may become child nodes")
+    out += ["", "## Requirements", "", "TODO one numbered requirement per behaviour, each naming the decision it serves.", "",
+            "## Out of scope", "", "TODO", "",
+            "## Gaps", "",
+            "A builder that finds this spec silent stops that part and runs `python %s gap <this file> --title \"...\" --by <name>`; it never improvises." % tool, ""]
+    return "\n".join(out)
+
+
+def cmd_spec(tree, args):
+    """dte:C26"""
+    node = tree.nodes.get(args.id)
+    if node is None:
+        print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
+        return 2
+    text = spec_skeleton(tree, node)
+    if args.out:
+        if os.path.exists(args.out):
+            print("refusing to overwrite %s" % args.out)
+            return 2
+        os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+        write_text(args.out, text)
+        rel = tree.rel(os.path.abspath(args.out))
+        layer = tree.layer_of(rel)
+        print("wrote %s, citing %s" % (rel, node.id))
+        if layer != "specs":
+            print("  note: %s is outside the specs glob in dte.cfg, so show will list it as %s" % (rel, LAYER_LABEL[layer]))
+        return 0
+    print(text)
+    return 0
+
+
+def cmd_gap(tree, args):
+    """dte:C27"""
+    spec = tree.rel(os.path.abspath(args.spec))
+    if not os.path.isfile(os.path.join(tree.root, spec)):
+        print("no such spec: %s" % spec)
+        return 2
+    slug = "gap-" + re.sub(r"[^a-z0-9]+", "-", args.title.lower()).strip("-")[:60]
+    path = os.path.join(tree.inbox_dir, slug + ".md")
+    if os.path.exists(path):
+        print("a gap with that title is already filed: %s" % tree.rel(path))
+        return 2
+    os.makedirs(tree.inbox_dir, exist_ok=True)
+    body = (args.note or "TODO what the spec does not say, and what the builder needs to know").strip()
+    write_text(path, "---\nkind: gap\nspec: %s\ntitle: %s\nmade_by: ai\nby: %s\ndate: %s\n---\n\n## Gap\n\n%s\n"
+               % (spec, fm_str(args.title), args.by, datetime.date.today().isoformat(), body))
+    print("filed %s: the spec %s is silent on %r; whoever holds the spec answers there, then removes the file" % (tree.rel(path), spec, args.title))
+    return 0
+
+
+def builder_brief(tree, spec):
+    """dte:C27, dte:B42"""
+    tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
+    rel = tree.rel(os.path.abspath(spec))
+    text = read_text(spec).replace("\r\n", "\n")
+    ids = sorted({i for line in text.split("\n") for i in cited_ids(line)}, key=id_key)
+    print("DTE BUILDER BRIEF: you build to the spec below and to nothing else (B42 builderAutonomy).")
+    print()
+    print("Rules:")
+    print("  1. Build exactly what the spec says. You decide nothing: never run new, contest, place, retire or move,")
+    print("     and never read decisions/. Unratified nodes are not your concern; you have no ring.")
+    print("  2. Every file you create or substantially change carries the spec's citation at the top:")
+    print("     `python %s cite <file> %s`." % (tool, ",".join(ids) if ids else "<IDs the spec names>"))
+    print("  3. When the spec is silent, ambiguous or contradicts itself, stop that part and file the gap:")
+    print("     `python %s gap %s --title \"...\" --by <you> --note \"...\"`. Never improvise." % (tool, rel))
+    print("  4. Before you finish, `python %s validate` must print OK. Do not set DTE_RING." % tool)
+    print()
+    print("Spec: %s" % rel)
+    print("-" * 72)
+    print(text.rstrip("\n"))
     return 0
 
 
@@ -2847,8 +2969,17 @@ def main(argv=None):
     ci.add_argument("file")
     ci.add_argument("ids", help="comma-separated ids")
     br = sub.add_parser("brief")
-    br.add_argument("ring")
+    br.add_argument("ring", nargs="?", default=None)
     br.add_argument("--under", default=None, metavar="ID", help="restrict binding nodes to one subtree")
+    br.add_argument("--builder", default=None, metavar="SPEC", help="brief an agent that builds to this spec and holds no ring (C27)")
+    sp = sub.add_parser("spec")
+    sp.add_argument("id")
+    sp.add_argument("--out", default=None, metavar="FILE", help="write the skeleton here instead of stdout")
+    gp = sub.add_parser("gap")
+    gp.add_argument("spec")
+    gp.add_argument("--title", required=True)
+    gp.add_argument("--by", required=True)
+    gp.add_argument("--note", default=None)
     sub.add_parser("hook")
     args = ap.parse_args(argv)
     CONFIG.clear()
@@ -2863,7 +2994,7 @@ def main(argv=None):
         "new": cmd_new, "show": cmd_show, "find": cmd_find, "ratify": cmd_ratify,
         "unratified": cmd_unratified, "import": cmd_import, "authorize": cmd_authorize,
         "conflict": cmd_conflict, "reparent": cmd_reparent, "set": cmd_set, "contest": cmd_contest, "retired": cmd_retired, "export": cmd_export,
-        "init": cmd_init, "vendor": cmd_vendor, "cite": cmd_cite, "brief": cmd_brief, "hook": cmd_hook,
+        "init": cmd_init, "vendor": cmd_vendor, "spec": cmd_spec, "gap": cmd_gap, "cite": cmd_cite, "brief": cmd_brief, "hook": cmd_hook,
     }[args.cmd](tree, args)
 
 
