@@ -1242,7 +1242,7 @@ class TestZeroTwo(Base):
         write_file(self.root, p, base + "\n## Consequences\n\n- *Unenforced:* a unit is visual; no test can see it.\n")
         self.assertNotIn("states a MUST", self._validate()[1])
         write_file(self.root, p, base)
-        write_file(self.root, "tests/test_units.py", "# dte:B1\n")
+        write_file(self.root, "tests/test_units.py", "# dte" ":B1\n")
         self.assertNotIn("states a MUST", self._validate()[1])
         write_file(self.root, p, self._read(p).replace("MUST show", "should show") + "\n## History\n\n- it MUST once\n")
         self.assertNotIn("states a MUST", self._validate()[1])   # History records other times
@@ -1305,7 +1305,7 @@ class TestZeroTwo(Base):
 
     # item 33
     def test_cite_does_nothing_when_the_header_already_cites_by_name(self):
-        write_file(self.root, "src/c.ts", "// [[B2]] leafTwo, [[C1]] some name\nexport {}\n")
+        write_file(self.root, "src/c.ts", "// [" "[B2]] leafTwo, [" "[C1]] some name\nexport {}\n")
         code, out = run(self.root, "cite", "src/c.ts", "C1")
         self.assertEqual(code, 0, out)
         self.assertIn("already cites", out)
@@ -1324,7 +1324,7 @@ class TestZeroTwo(Base):
     # items 14, 16, 17, 18, 30
     def test_three_gauges_covers_and_the_exclusion_store(self):
         write_file(self.root, "dte.cfg", "specs = specs/*\ntests = tests/*\n")
-        write_file(self.root, "specs/cards.md", "<!-- dte:B1 -->\n<!-- covers: src/cards/* -->\n# Cards\n")
+        write_file(self.root, "specs/cards.md", "<!-- dte" ":B1 -->\n<!-- covers: src/cards/* -->\n# Cards\n")
         write_file(self.root, "specs/loose.md", "# nothing cited\n")
         write_file(self.root, "src/cards/one.ts", "".join("// why %d\n" % k for k in range(6)) + "x\n")
         write_file(self.root, ".dtecoverage", "why: fixtures need no decision\nsrc/none.py\nwhy: gone\nsrc/missing/*\n")
@@ -1337,7 +1337,7 @@ class TestZeroTwo(Base):
         self.assertIn("src/cards/one.ts", out.split("Next worklist")[1])
         self.assertIn("via specs/cards.md", run(self.root, "show", "B1")[1])
         self.assertIn("Built to specs/cards.md", run(self.root, "blast", "B1")[1])
-        write_file(self.root, "specs/loose.md", "<!-- dte:B2 -->\n")
+        write_file(self.root, "specs/loose.md", "<!-- dte" ":B2 -->\n")
         write_file(self.root, ".dtecoverage", "why: fixtures need no decision\nsrc/none.py\ndte.cfg\n")
         code, out = run(self.root, "coverage", "--check")
         self.assertEqual(code, 0, out)
@@ -1394,7 +1394,7 @@ class TestZeroTwo(Base):
         self._git("checkout", "-q", "-b", "feature")
         write_node(self.root, id="C2", parents="B1", made_by="ai", title="feature's C2", name="featureTwo",
                    uuid=dte.new_uuid(0, "feature"))
-        write_file(self.root, "src/f.py", "# dte:C2\n")
+        write_file(self.root, "src/f.py", "# dte" ":C2\n")
         self._git("add", "-A"); self._git("commit", "-q", "-m", "feature")
         self._git("checkout", "-q", "master") if self._git("rev-parse", "--verify", "master").returncode == 0 else self._git("checkout", "-q", "main")
         write_node(self.root, id="C2", parents="B1", made_by="ai", title="base's C2", name="baseTwo")
