@@ -61,7 +61,6 @@ status: proposed          # only when not active: proposed | superseded | revert
 parents: [A1, A2]         # required unless ring A; each strictly shallower
 branch: bleeding-edge     # only on the root of a branch-local subtree (B54)
 made_by: human            # only when not ai: human | joint
-by: Claude Fable 5.1      # who wrote it, person or model
 date: 2026-09-02
 ratified_by:              # the human who settled an ai or joint leaf
 authorized_by:            # a human's go-ahead to change a human-held leaf
@@ -71,7 +70,7 @@ aliases: [citationToken]  # the leaf's name, and nothing else
 ---
 ```
 
-Provenance is `by`, `date` and `ratified_by` on every leaf, with `made_by` written only when a human, or a human with an agent, made it; absent, it reads as `ai` (dte:B59). What a leaf superseded is the ledger's fact, not a field. Under `retire = keep` a retired file carries `status` and `superseded_by`, because there the file is the record. With `links = wikilink` the link fields are written as quoted wikilinks, `parents: ["[[A1]]", "[[A2]]"]`; both spellings are always read. Obsidian's `tags` and `cssclasses` are known keys, `null` and `~` read as empty, and dot-directories under `decisions/` are skipped, so the directory opens as a vault (dte:B30). `dte upgrade` brings a 0.1 leaf to this shape.
+Provenance is `date` and `ratified_by` on every leaf, with `made_by` written only when a human, or a human with an agent, made it; absent, it reads as `ai`. Who wrote a leaf is git's record: the tool writes no `by`, and reads one an import carries (dte:B59). What a leaf superseded is the ledger's fact, not a field. Under `retire = keep` a retired file carries `status` and `superseded_by`, because there the file is the record. With `links = wikilink` the link fields are written as quoted wikilinks, `parents: ["[[A1]]", "[[A2]]"]`; both spellings are always read. Obsidian's `tags` and `cssclasses` are known keys, `null` and `~` read as empty, and dot-directories under `decisions/` are skipped, so the directory opens as a vault (dte:B30). `dte upgrade` brings a 0.1 leaf to this shape.
 
 Body sections, in this order. Only **Decision** and **Why** are required, and no section is left empty.
 
@@ -104,7 +103,7 @@ Ratify drops it too; History restarts at the ratification (B62).
 
 A ratified leaf is present governance: what stands, why, and what it makes true. The owner may rewrite it in their own voice; git keeps everything before (dte:B62).
 
-A leaf maps onto an Architecture Decision Record: MADR's *Context and Problem Statement* and *Decision Drivers* are the Why, *Decision Outcome* the Decision, *Consequences* the Consequences, *Considered Options* the Alternatives considered, and *decision-makers* is `by` plus `ratified_by`. MADR's *Confirmation* has no field: confirmation is derived from citing tests. What a leaf has that MADR does not: ring, parents, uuid, the ledger, the one contest.
+A leaf maps onto an Architecture Decision Record: MADR's *Context and Problem Statement* and *Decision Drivers* are the Why, *Decision Outcome* the Decision, *Consequences* the Consequences, *Considered Options* the Alternatives considered, and *decision-makers* is the commit author plus `ratified_by`. MADR's *Confirmation* has no field: confirmation is derived from citing tests. What a leaf has that MADR does not: ring, parents, uuid, the ledger, the one contest.
 
 ## 6. Citations
 
@@ -122,7 +121,7 @@ A leaf maps onto an Architecture Decision Record: MADR's *Context and Problem St
 - **R2 (dte:B4)** Two in-effect leaves that contradict are resolved by ring: shallower wins. A same-ring contradiction is an error, and usually means a refinement was filed as a sibling (dte:B35).
 - **R3 (dte:B24)** A leaf is retired only through the ledger. In delete mode the file is removed and git keeps the text; in keep mode the file stays with a status. A deleted or renamed leaf file with no ledger line is an error, unless its uuid lives on under another id (a renumber) or it belongs to another branch's subtree. Retired numbers are never reissued.
 - **R4 (dte:B24)** An in-effect leaf whose parent is retired is an **orphan**, and an error. This is how A1 is enforced: retiring a leaf forces its blast radius to be dealt with.
-- **R5 (dte:B59)** Every leaf records `by`, `date` and its uuid. AI and joint leaves may be in effect unratified, so agents are not blocked, and validate surfaces every unratified leaf until a human ratifies it: it names those in rings A and B and counts the rest. A decision nobody remembers making is reconstructed as an AI leaf whose Why says it is inferred and from what.
+- **R5 (dte:B59)** Every leaf records its `date` and uuid; git records who wrote it. AI and joint leaves may be in effect unratified, so agents are not blocked, and validate surfaces every unratified leaf until a human ratifies it: it names those in rings A and B and counts the rest. A decision nobody remembers making is reconstructed as an AI leaf whose Why says it is inferred and from what.
 - **R6 (dte:B61)** A hand edit to a leaf's body adds a History line, or a wording-only sweep is logged once in `decisions/EDITORIAL`. Validate warns on a body change neither covers.
 - **R7 (dte:B11)** A human-held leaf that is superseded, reverted, moved or re-parented carries `authorized_by` naming a human. Off with `protect_human = off`.
 - **R8 (dte:A6, dte:B15)** An agent never places or alters a leaf shallower than its ring. It writes the decision to the inbox and asks. `validate --as <ring>` enforces this on the agent's changed files, and warns when leaves changed with no ring declared (dte:B52).

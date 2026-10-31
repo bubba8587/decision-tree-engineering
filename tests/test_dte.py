@@ -1199,7 +1199,7 @@ class TestZeroTwo(Base):
                         "--made-by", "joint", "--parents", "B1", "--decision", "d", "--why", "w")
         self.assertEqual(code, 0, out)
         text = self._read("decisions/C/C2.md")
-        for gone in ("status:", "supersedes", "superseded_by", "confidence", "name:"):
+        for gone in ("status:", "supersedes", "superseded_by", "confidence", "name:", "\nby:"):   # who wrote it is git's record (B59)
             self.assertNotIn(gone, text)
         self.assertIn("made_by: joint", text)
         self.assertIn("(joint, unratified)", run(self.root, "show", "C2")[1])

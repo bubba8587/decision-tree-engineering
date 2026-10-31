@@ -10,7 +10,7 @@ A path argument is taken as typed when it is absolute or exists from the current
 
 ## new, place, import
 
-Every command that writes a leaf writes the 0.2 shape: `id`, `uuid`, `title` (double-quoted), `status` only when not active, `parents`, `branch` when given, `made_by` only when not `ai`, `by`, `date`, an empty `ratified_by:` (so the property shows in Obsidian, ready to be typed into), `authorized_by` and `contested_by` when set, and `aliases: [name]`.
+Every command that writes a leaf writes the 0.2 shape: `id`, `uuid`, `title` (double-quoted), `status` only when not active, `parents`, `branch` when given, `made_by` only when not `ai`, `by` only when an import carries one, `date`, an empty `ratified_by:` (so the property shows in Obsidian, ready to be typed into), `authorized_by` and `contested_by` when set, and `aliases: [name]`.
 
 `dte new <ring> --name N --title T --by NAME [--parents ...] [--made-by ai|human|joint] [--status active|proposed] [--branch B] [--authorized-by HUMAN]` requires a camelCase name not already taken. The body comes from `--body-file` (its sections verbatim, frontmatter stripped, Decision and Why required) or from `--decision`, `--why` and `--consequences`; a missing section is `TODO` and validate warns until it is written. Before allocating, `new` asks `git ls-remote --heads origin` (eight-second timeout) and warns when the remote has branches this clone has not fetched; `DTE_NO_REMOTE=1` skips the call.
 

@@ -137,7 +137,7 @@ Excluded from the artifacts gauge (.dtecoverage, 2 files under 1 reason):
 $ dte show B1
 B1 yamlFile: Config is a single YAML file, path given by CONFIG_PATH (ai, unratified)
   file: decisions/B/B1.md
-  status: active   made_by: ai   by: bot   date: 2026-10-31
+  status: active   made_by: ai   date: 2026-10-31
   parents:
     A1 oneSource: Config comes from one source of truth at startup
     A2 laptopRunnable: The service stays runnable by one person on a laptop
@@ -186,7 +186,7 @@ folded C2 "defaultPath: CONFIG_PATH defaults to ./config.yml" into B1 yamlFile: 
 $ dte show B1
 B1 yamlFile: Config is a single YAML file, path given by CONFIG_PATH (ai, unratified)
   file: decisions/B/B1.md
-  status: active   made_by: ai   by: bot   date: 2026-10-31
+  status: active   made_by: ai   date: 2026-10-31
   parents:
     A1 oneSource: Config comes from one source of truth at startup
     A2 laptopRunnable: The service stays runnable by one person on a laptop
@@ -244,7 +244,7 @@ One decision, without opening the file.
 $ dte show C1
 C1 dictSchema: The schema lives next to the loader as a Python dict (ai, unratified)
   file: decisions/C/C1.md
-  status: active   made_by: ai   by: bot   date: 2026-10-31
+  status: active   made_by: ai   date: 2026-10-31
   parents:
     B2 schemaChecked: Config values are validated against a schema before use (ai, unratified)
   lineage to the core:
@@ -450,7 +450,7 @@ OK
 $ dte show B3
 B3 dictSchema: The schema lives next to the loader as a Python dict (ai, unratified)
   file: decisions/B/B3.md
-  status: active   made_by: ai   by: bot   date: 2026-10-31
+  status: active   made_by: ai   date: 2026-10-31
   parents:
     A2 laptopRunnable: The service stays runnable by one person on a laptop
   lineage to the core:

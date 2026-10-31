@@ -50,7 +50,6 @@ id: B3
 uuid: 01a05f6a-5803-7151-84ae-6f4c191d8679   # tells two branches' B3s apart
 title: "Artifacts cite decisions with a dte:ID token"
 parents: [A1, A2]         # must be in shallower rings; ["[[A1]]", "[[A2]]"] in wikilink form
-by: Claude Fable 5.1
 date: 2026-09-02
 ratified_by:              # a human's name here settles the leaf
 aliases: [citationToken]  # its name: chat says "B3 citationToken"

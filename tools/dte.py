@@ -1821,7 +1821,7 @@ def cmd_place(tree, args):
             return 2
     new_id = next_id(tree, ring)
     today = datetime.date.today().isoformat()
-    fm = build_frontmatter(lean_fields(new_id, item.title, parents, item.name, made_by=item.made_by, by=item.by,
+    fm = build_frontmatter(lean_fields(new_id, item.title, parents, item.name, made_by=item.made_by,
                                        date=str(item.raw.get("date") or today))).rstrip("\n").split("\n")
     body = item.body.rstrip("\n")
     history = "\n\n## History\n\n" if "## History" not in body else "\n"
@@ -2544,7 +2544,8 @@ def cmd_editorial(tree, args):
 def lean_fields(new_id, title, parents, name, status="active", made_by="ai", by="", date=None,
                 ratified_by="", authorized_by="", contested_by="", branch="", extra=()):
     """A leaf's frontmatter in the 0.2 shape: only what no other record holds. status only when not
-    active, made_by only when not ai, no supersedes (the ledger has it), the name as the one alias.  dte:B43"""
+    active, made_by only when not ai, no supersedes (the ledger has it), no by (git has it, B59) unless an
+    import carries one, the name as the one alias.  dte:B43"""
     fields = [("id", new_id), ("uuid", new_uuid()), ("title", fm_str(title))]
     if status and status != "active":
         fields.append(("status", status))
@@ -2684,7 +2685,7 @@ def cmd_new(tree, args):
     warn_unfetched(tree)
     new_id = next_id(tree, ring)
     fields = lean_fields(new_id, args.title, parents, args.name, status=args.status, made_by=args.made_by,
-                         by=args.by, authorized_by=args.authorized_by, branch=args.branch)
+                         authorized_by=args.authorized_by, branch=args.branch)
     body = node_body(args)
     if body is None:
         return 2
@@ -2819,7 +2820,7 @@ def cmd_import(tree, args):
                 extra.append((f, "[%s]" % ", ".join(str(x) for x in v) if isinstance(v, list) else str(v)))
         name = str(data.get("name") or _first_alias(data) or "")
         fields = lean_fields(new_id, str(data["title"]), parents, name, status=str(data.get("status") or "active"),
-                             made_by=str(data.get("made_by") or "ai"), by=str(data.get("by") or args.by),
+                             made_by=str(data.get("made_by") or "ai"), by=str(data.get("by") or ""),
                              date=str(data.get("date") or today), ratified_by=str(data.get("ratified_by") or ""),
                              authorized_by=str(data.get("authorized_by") or ""),
                              contested_by=str(data.get("contested_by") or ""), branch=str(data.get("branch") or ""),
@@ -3579,7 +3580,7 @@ def settle_contest(tree, node, args):
         if args.name and not NAME_RE.match(args.name):
             print("a name is a camelCase identifier like shareImpl")
             return 2
-        fields = lean_fields(new_id, args.title, node.parents, args.name or "", by=args.by, contested_by=args.by)
+        fields = lean_fields(new_id, args.title, node.parents, args.name or "", contested_by=args.by)
         text = build_frontmatter(fields) + body
         text = append_history(text, "- %s created as the %s that won the contest of %s; by %s."
                               % (datetime.date.today().isoformat(), args.chosen, node.id, args.by))
