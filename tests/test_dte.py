@@ -4,6 +4,7 @@ Run: python -m unittest discover -s tests
 """
 import io
 import json
+import re
 import os
 import subprocess
 import sys
@@ -187,7 +188,7 @@ class TestHumanHeld(Base):
         write_node(self.root, id="B2", parents="A1", status="reverted")
         code, out = run(self.root, "validate")
         self.assertEqual(code, 1)
-        self.assertIn("B2: human-held node is reverted without authorized_by", out)
+        self.assertIn("B2: human-held leaf is reverted without authorized_by", out)
 
     def test_authorized_revert_passes(self):
         write_node(self.root, id="B2", parents="A1", status="reverted", authorized_by="owner")
@@ -201,7 +202,7 @@ class TestHumanHeld(Base):
         write_node(self.root, id="C1", parents="B3")
         code, out = run(self.root, "validate")
         self.assertEqual(code, 1)
-        self.assertIn("B1: human-held node is superseded without authorized_by", out)
+        self.assertIn("B1: human-held leaf is superseded without authorized_by", out)
 
     def test_protection_can_be_configured_off(self):
         write_file(self.root, "dte.cfg", "protect_human = off\n")
@@ -298,7 +299,7 @@ class TestAuthority(Base):
         self._git("mv", "decisions/B/B2.md", "decisions/B/B9.md")
         code, out = run(self.root, "validate")
         self.assertEqual(code, 1)
-        self.assertIn("decisions/B/B2.md: node file renamed", out)
+        self.assertIn("decisions/B/B2.md: leaf file renamed", out)
 
     def test_placing_inbox_item_is_not_a_deletion(self):
         write_inbox(self.root, "thing", "A thing", ring="B", parents="A1")
@@ -319,7 +320,7 @@ class TestAuthority(Base):
         write_node(self.root, id="B2", parents="A1", title="edited by ai")
         code, out = run(self.root, "validate", "--as", "B")
         self.assertEqual(code, 1)
-        self.assertIn("B2: human-held node changed without authorized_by", out)
+        self.assertIn("B2: human-held leaf changed without authorized_by", out)
 
 
 class TestScope(Base):
@@ -531,7 +532,7 @@ class TestRetire(Base):
         os.remove(os.path.join(self.root, "src", "b.py"))
         code, out = run(self.root, "validate", "--as", "B")
         self.assertEqual(code, 1)
-        self.assertIn("B2: human-held node deleted without authorized_by in the ledger", out)
+        self.assertIn("B2: human-held leaf deleted without authorized_by in the ledger", out)
 
     def test_blast_lists_retired_predecessor(self):
         write_node(self.root, id="B3", parents="A1", made_by="ai")
@@ -632,7 +633,7 @@ class TestAuthoring(Base):
         code, out = run(self.root, "export")
         self.assertEqual(code, 0)
         data = json.loads(out)
-        self.assertEqual({n["id"] for n in data["nodes"]}, {"A1", "B1", "B2", "C1"})
+        self.assertEqual({n["id"] for n in data["leaves"]}, {"A1", "B1", "B2", "C1"})
         self.assertIn({"file": "src/a.py", "line": 1, "id": "C1"}, data["citations"])
         self.assertEqual(data["errors"], [])
         out_path = os.path.join(self.root, "tree.json")
@@ -889,7 +890,7 @@ class TestVault(Base):
         self.assertEqual(code, 0, out)
         self.assertIn("C2 colon: inside", out)
         tree = dte.Tree(self.root, os.path.join(self.root, "decisions"))
-        self.assertEqual(tree.nodes["C2"].parents, ["B1"])
+        self.assertEqual(tree.leaves["C2"].parents, ["B1"])
         code, out = run(self.root, "blast", "C2")
         self.assertIn("src/w.py", out)
 
@@ -1180,3 +1181,257 @@ class TestFeedbackRound(Base):
         code, out = run(self.root, "init")
         self.assertEqual(code, 0, out)
         self.assertIn("dte.py", self._read(".dteignore"))
+
+
+class TestZeroTwo(Base):
+    """DTE 0.2: what Solenoid's copy proved, and the open items of its feedback, by item number."""
+
+    def setUp(self):
+        super().setUp()
+        os.environ["DTE_NO_REMOTE"] = "1"
+
+    def _validate(self, *extra):
+        return run(self.root, "validate", *extra)
+
+    # lean frontmatter, items 24, 25, 41, 46
+    def test_new_writes_lean_frontmatter_and_reads_joint_back(self):
+        code, out = run(self.root, "new", "C", "--name", "jointCall", "--title", "t", "--by", "owner and agent",
+                        "--made-by", "joint", "--parents", "B1", "--decision", "d", "--why", "w")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/C/C2.md")
+        for gone in ("status:", "supersedes", "superseded_by", "confidence", "name:"):
+            self.assertNotIn(gone, text)
+        self.assertIn("made_by: joint", text)
+        self.assertIn("(joint, unratified)", run(self.root, "show", "C2")[1])
+        code, out = run(self.root, "new", "C", "--title", "t", "--by", "a", "--parents", "B1")
+        self.assertEqual(code, 2)   # a leaf always has a name (A5)
+
+    def test_upgrade_brings_a_01_tree_to_02_and_is_idempotent(self):
+        write_file(self.root, "decisions/B/B3.md",
+                   "---\nid: B3\ntitle: old\nstatus: active\nparents: [A1]\nsupersedes: []\nsuperseded_by:\n"
+                   "conflicts_with: []\nmade_by: ai\nby: agent\ndate: 2026-09-02\nratified_by:\nconfidence: low\n"
+                   "name: oldRule\naliases: [oldRule]\n---\n\n## Decision\n\nd\n\n## Why\n\nw\n")
+        code, out = self._validate()
+        self.assertIn("'confidence' is a 0.1 field", out)
+        self.assertIn("dte upgrade", out)
+        code, out = run(self.root, "upgrade")
+        self.assertEqual(code, 0, out)
+        text = self._read("decisions/B/B3.md")
+        self.assertRegex(text, r"\nid: B3\nuuid: [0-9a-f-]{36}\n")
+        for gone in ("status:", "supersedes", "confidence", "name:", "made_by"):
+            self.assertNotIn(gone, text)
+        self.assertIn("aliases: [oldRule]", text)
+        self.assertIn("by: agent", text)
+        self.assertEqual(self._validate()[0], 0)
+        first = text
+        run(self.root, "upgrade")
+        self.assertEqual(self._read("decisions/B/B3.md"), first)   # stable uuid, nothing else to do
+
+    # item 7
+    def test_empty_section_warns(self):
+        p = "decisions/B/B1.md"
+        write_file(self.root, p, self._read(p) + "\n## Consequences\n\n## History\n\n- x\n")
+        self.assertIn("B1: section '## Consequences' is empty", self._validate()[1])
+
+    # item 27
+    def test_a_must_is_tested_or_labeled(self):
+        p = "decisions/B/B1.md"
+        base = self._read(p).replace("\nx\n", "\nEvery card MUST show its unit.\n")
+        write_file(self.root, p, base)
+        self.assertIn("B1: states a MUST that no test cites", self._validate()[1])
+        write_file(self.root, p, base + "\n## Consequences\n\n- *Unenforced:* a unit is visual; no test can see it.\n")
+        self.assertNotIn("states a MUST", self._validate()[1])
+        write_file(self.root, p, base)
+        write_file(self.root, "tests/test_units.py", "# dte:B1\n")
+        self.assertNotIn("states a MUST", self._validate()[1])
+        write_file(self.root, p, self._read(p).replace("MUST show", "should show") + "\n## History\n\n- it MUST once\n")
+        self.assertNotIn("states a MUST", self._validate()[1])   # History records other times
+
+    # item 38
+    def test_a_leaf_cites_only_up_its_lineage(self):
+        p = "decisions/B/B1.md"
+        write_file(self.root, p, self._read(p).replace("\nx\n", "\nx, refined by [[C1]].\n"))
+        code, out = self._validate()
+        self.assertEqual(code, 1)
+        self.assertIn("B1: cites C1, a deeper ring", out)
+        write_file(self.root, p, self._read(p).replace("x, refined by [[C1]].", "x") + "\n## History\n\n- split into [[C1]].\n")
+        self.assertEqual(self._validate()[0], 0)   # History may name anything
+
+    # item 40
+    def test_clearing_history_is_not_an_unlogged_edit(self):
+        p = "decisions/B/B1.md"
+        write_file(self.root, p, self._read(p) + "\n## History\n\n- one\n- two\n- three\n")
+        self._init_repo()
+        write_file(self.root, p, self._read(p).replace("\nx\n", "\nx, sharper\n").replace("- one\n- two\n- three\n", "- reworded, history reset\n"))
+        self.assertNotIn("no new History line", self._validate()[1])
+
+    # item 21
+    def test_editorial_log_covers_a_wording_sweep_once(self):
+        self._init_repo()
+        for p in ("decisions/B/B1.md", "decisions/C/C1.md"):
+            write_file(self.root, p, self._read(p).replace("\ny\n", "\ny, in the new vocabulary\n"))
+        out = self._validate()[1]
+        self.assertIn("B1: body changed in this working tree with no new History line", out)
+        code, out = run(self.root, "editorial", "--by", "agent", "--note", "node -> leaf")
+        self.assertEqual(code, 0, out)
+        self.assertIn("2 leaves", out)
+        self.assertNotIn("no new History line", self._validate()[1])
+        write_file(self.root, "decisions/B/B1.md", self._read("decisions/B/B1.md").replace("\nx\n", "\nx changed again\n"))
+        self.assertIn("B1: body changed", self._validate()[1])   # the hash no longer matches
+
+    # item 22
+    def test_retire_carries_the_winners_name_and_collapses_repeats(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai", name="winnerRule")
+        write_node(self.root, id="B1", parents="A1", made_by="ai", name="loserRule")
+        write_file(self.root, "docs/x.md", "Uses [[B1]] loserRule here.\nBoth ([[B3]] winnerRule) and ([[B1]] loserRule).\n")
+        self._init_repo()
+        code, out = run(self.root, "retire", "B1", "--by", "agent", "--superseded-by", "B3")
+        self.assertEqual(code, 0, out)
+        doc = self._read("docs/x.md")
+        self.assertIn("Uses [[B3]] winnerRule here.", doc)
+        self.assertIn("Both ([[B3]] winnerRule).", doc)
+        self.assertNotIn("()", doc)
+
+    # item 43
+    def test_absorbing_successor_does_not_inherit_a_contest(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        self._init_repo()
+        run(self.root, "contest", "B1", "--record", "--chosen", "keep", "--by", "agent", "--note", "kept")
+        code, out = run(self.root, "retire", "B1", "--by", "agent", "--superseded-by", "B3")
+        self.assertEqual(code, 0, out)
+        b3 = self._read("decisions/B/B3.md")
+        self.assertNotIn("## Contest", b3)
+        self.assertNotIn("contested_by", b3)
+
+    # item 33
+    def test_cite_does_nothing_when_the_header_already_cites_by_name(self):
+        write_file(self.root, "src/c.ts", "// [[B2]] leafTwo, [[C1]] some name\nexport {}\n")
+        code, out = run(self.root, "cite", "src/c.ts", "C1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("already cites", out)
+        self.assertEqual(self._read("src/c.ts").count("C1"), 1)
+
+    # item 35
+    def test_unratified_sorts_by_ring_then_reach_and_validate_names_the_top(self):
+        write_node(self.root, id="B3", parents="A1", made_by="ai")
+        write_node(self.root, id="C2", parents="B3", made_by="ai")
+        write_node(self.root, id="C3", parents="B3", made_by="ai")
+        out = run(self.root, "unratified")[1]
+        self.assertLess(out.index("B3 "), out.index("B1 "))   # B3 has two below, B1 one
+        self.assertLess(out.index("B1 "), out.index("C1 ") if "C1 " in out else len(out))
+        self.assertIn("in rings A and B (2)", self._validate()[1])
+
+    # items 14, 16, 17, 18, 30
+    def test_three_gauges_covers_and_the_exclusion_store(self):
+        write_file(self.root, "dte.cfg", "specs = specs/*\ntests = tests/*\n")
+        write_file(self.root, "specs/cards.md", "<!-- dte:B1 -->\n<!-- covers: src/cards/* -->\n# Cards\n")
+        write_file(self.root, "specs/loose.md", "# nothing cited\n")
+        write_file(self.root, "src/cards/one.ts", "".join("// why %d\n" % k for k in range(6)) + "x\n")
+        write_file(self.root, ".dtecoverage", "why: fixtures need no decision\nsrc/none.py\nwhy: gone\nsrc/missing/*\n")
+        code, out = run(self.root, "coverage", "--check")
+        self.assertEqual(code, 1, out)
+        self.assertIn("(1 through a spec's covers:)", out)
+        self.assertIn("specs         1/2", out)
+        self.assertIn("specs/loose.md", out)
+        self.assertIn("src/missing/*", out)   # stale
+        self.assertIn("src/cards/one.ts", out.split("Next worklist")[1])
+        self.assertIn("via specs/cards.md", run(self.root, "show", "B1")[1])
+        self.assertIn("Built to specs/cards.md", run(self.root, "blast", "B1")[1])
+        write_file(self.root, "specs/loose.md", "<!-- dte:B2 -->\n")
+        write_file(self.root, ".dtecoverage", "why: fixtures need no decision\nsrc/none.py\ndte.cfg\n")
+        code, out = run(self.root, "coverage", "--check")
+        self.assertEqual(code, 0, out)
+        write_file(self.root, ".dtecoverage", "src/none.py\n")
+        self.assertEqual(run(self.root, "coverage")[0], 2)   # a glob before any why: line
+
+    # item 45
+    def test_fold_puts_an_aspect_back_into_its_parent(self):
+        write_node(self.root, id="D1", parents="C1", made_by="ai")
+        write_node(self.root, id="C1", parents="B1", made_by="ai", name="aspectOf")
+        self._init_repo()
+        code, out = run(self.root, "fold", "C1", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        b1 = self._read("decisions/B/B1.md")
+        self.assertIn("## Consequences\n\n- x", b1)
+        self.assertIn("C1 aspectOf folded in", b1)
+        self.assertIn("dte:B1", self._read("src/a.py"))
+        self.assertIn("parents: [B1]", self._read("decisions/D/D1.md"))
+        self.assertIn("\tfolded\tB1\t", self._read("decisions/RETIRED"))
+        self.assertEqual(self._validate()[0], 0)
+        self.assertIn("folded into B1", run(self.root, "show", "C1")[1])
+
+    def test_to_spec_turns_mechanics_into_spec_text(self):
+        write_file(self.root, "dte.cfg", "specs = specs/*\n")
+        write_node(self.root, id="D1", parents="C1", made_by="ai")
+        write_node(self.root, id="C1", parents="B1", made_by="ai", name="loadOrder", title="Load the cache first")
+        self._init_repo()
+        code, out = run(self.root, "to-spec", "C1", "specs/loading.md", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        spec = self._read("specs/loading.md")
+        self.assertIn("dte:B1", spec.split("\n")[0])
+        self.assertIn("## Load the cache first\n\nx", spec)
+        self.assertIn("dte:B1", self._read("src/a.py"))
+        self.assertIn("parents: [B1]", self._read("decisions/D/D1.md"))
+        self.assertIn("\tto-spec\tspecs/loading.md\t", self._read("decisions/RETIRED"))
+        self.assertEqual(self._validate()[0], 0)
+        self.assertIn("now spec text in specs/loading.md", run(self.root, "show", "C1")[1])
+
+    # items 32, 42
+    def test_renumber_keeps_the_leaf_and_validate_knows_it_by_uuid(self):
+        self._init_repo()
+        uuid = re.search(r"uuid: (\S+)", self._read("decisions/C/C1.md")).group(1)
+        code, out = run(self.root, "renumber", "C1", "--by", "agent")
+        self.assertEqual(code, 0, out)
+        self.assertIn("uuid: " + uuid, self._read("decisions/C/C2.md"))
+        self.assertIn("dte:C2", self._read("src/a.py"))
+        code, out = run(self.root, "validate", "--as", "C")
+        self.assertNotIn("deleted with no ledger line", out)
+        self.assertNotIn("renamed", out)
+        self.assertNotIn("C1\t", self._read("decisions/RETIRED") if os.path.exists(os.path.join(self.root, "decisions/RETIRED")) else "")
+
+    def test_merge_ids_renumbers_what_the_base_gave_another_leaf(self):
+        self._init_repo()
+        self._git("checkout", "-q", "-b", "feature")
+        write_node(self.root, id="C2", parents="B1", made_by="ai", title="feature's C2", name="featureTwo",
+                   uuid=dte.new_uuid(0, "feature"))
+        write_file(self.root, "src/f.py", "# dte:C2\n")
+        self._git("add", "-A"); self._git("commit", "-q", "-m", "feature")
+        self._git("checkout", "-q", "master") if self._git("rev-parse", "--verify", "master").returncode == 0 else self._git("checkout", "-q", "main")
+        write_node(self.root, id="C2", parents="B1", made_by="ai", title="base's C2", name="baseTwo")
+        self._git("add", "-A"); self._git("commit", "-q", "-m", "base")
+        base = self._git("rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        self._git("checkout", "-q", "feature")
+        code, out = run(self.root, "merge-ids", base, "--by", "agent")
+        self.assertEqual(code, 0, out)
+        self.assertIn("renumbered C2 -> C3", out)
+        self.assertIn("dte:C3", self._read("src/f.py"))
+        self.assertIn("feature's C2", self._read("decisions/C/C3.md"))
+        self.assertIn("no id collisions", run(self.root, "merge-ids", base, "--by", "agent")[1])
+
+    # item 44
+    def test_branch_local_subtree(self):
+        write_node(self.root, id="A2", made_by="human")
+        p = "decisions/A/A2.md"
+        write_file(self.root, p, self._read(p).replace("parents: []", "parents: []\nbranch: bleeding"))
+        write_node(self.root, id="B3", parents="A2", made_by="ai")
+        self._init_repo()
+        out = self._validate()[1]
+        self.assertIn("A2: belongs to branch bleeding", out)
+        self.assertIn("branch: bleeding", run(self.root, "show", "B3")[1])
+        os.remove(os.path.join(self.root, p))
+        os.remove(os.path.join(self.root, "decisions/B/B3.md"))
+        out = self._validate()[1]
+        self.assertNotIn("deleted with no ledger line", out)
+
+    # item 31
+    def test_tree_change_with_no_ring_declared_warns(self):
+        self._init_repo()
+        p = "decisions/C/C1.md"
+        write_file(self.root, p, self._read(p) + "\n## History\n\n- touched\n")
+        self.assertIn("no ring declared", self._validate()[1])
+        self.assertNotIn("no ring declared", self._validate("--as", "B")[1])
+        os.environ["DTE_OWNER"] = "1"
+        try:
+            self.assertNotIn("no ring declared", self._validate()[1])
+        finally:
+            del os.environ["DTE_OWNER"]

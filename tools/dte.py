@@ -155,6 +155,7 @@ def _collapse_repeat(line, i, name):
         if sep and sep.group(0).strip():
             a = sep.start()
         line = line[:a] + line[b:]
+    line = re.sub(r"\s*(?:,|;|\band\b|\bor\b)\s*(?:\(\s*\)|\[\s*\])", "", line)
     line = re.sub(r"\s*\(\s*\)", "", line)
     line = re.sub(r"\s*\[\s*\]", "", line)
     return line
@@ -179,9 +180,9 @@ KNOWN_FIELDS = LIST_FIELDS | OBSIDIAN_FIELDS | {
 DROPPED_FIELDS = {"name": "the first alias is the name", "confidence": "say how sure in the Why"}
 INBOX_FIELDS = {"name", "title", "proposed_ring", "ask", "made_by", "by", "date", "parents", "kind", "spec"} | OBSIDIAN_FIELDS
 # The outbox: what a human changes in the vault and an agent must process. A note dropped in
-# decisions/outbox, an action tag on a node (a tags property or an inline #ratify, #retire, #contest, #ask),
+# decisions/outbox, an action tag on a leaf (a tags property or an inline #ratify, #retire, #contest, #ask),
 # or a ratified_by typed into the properties pane. Never a bare diff: an anonymous edit cannot
-# be told from an agent's own unfinished work, and validate already lists changed nodes (B17).
+# be told from an agent's own unfinished work, and validate already lists changed leaves (B17).
 OUTBOX_DIR = "outbox"
 NAME_RE = re.compile(r"^[a-z][A-Za-z0-9]*$")   # the readable handle: camelCase, unique across the tree (dte:B32)
 ACTION_TAG_RE = re.compile(r"(?<![\w/#])#(ratify|retire|contest|ask)\b")
@@ -199,7 +200,7 @@ EDITORIAL = "EDITORIAL"  # dte:B36 one line per wording-only sweep
 
 DEFAULTS = {"summaries": True, "protect_human": True, "authority": (),
             "docs": ("*.md", "docs/*"), "broad_fraction": 0.3, "broad_min": 5,   # dte:C8
-            # Layers below the tree, told apart by glob so a node never stores what is below it.  dte:B37,C24
+            # Layers below the tree, told apart by glob so a leaf never stores what is below it.  dte:B37,C24
             "specs": ("specs/*", "spec/*", "*.spec.md"),
             "tests": ("tests/*", "test/*", "test_*", "*_test.*", "*.test.*", "*.spec.ts", "*.spec.js"),
             "agents": ("CLAUDE.md", "AGENTS.md", ".claude/*", ".cursorrules", ".github/copilot-instructions.md"),
@@ -448,7 +449,7 @@ class Tree:
         self.decisions_dir = os.path.abspath(decisions_dir)
         self.inbox_dir = os.path.join(self.decisions_dir, INBOX_DIR)
         self.outbox_dir = os.path.join(self.decisions_dir, OUTBOX_DIR)
-        self.nodes = {}
+        self.leaves = {}
         self.inbox = []
         self.outbox = []           # (slug, title, path) notes the human dropped for an agent
         self.retired = {}          # id -> ledger row  dte:C11
@@ -487,7 +488,7 @@ class Tree:
                 self._load_node(os.path.join(dirpath, fn))
         self._load_ledger()
         self._load_editorial()
-        for node in self.nodes.values():
+        for node in self.leaves.values():
             for p in node.parents:
                 r = self.resolve(p)
                 if r:
@@ -495,8 +496,8 @@ class Tree:
         # what a leaf superseded is the ledger's fact, not a field on the leaf  dte:B43
         for i, row in self.retired.items():
             succ = row["successor"]
-            if succ in self.nodes and row["action"] in ("superseded", "moved", "folded") and i not in self.nodes[succ].supersedes:
-                self.nodes[succ].supersedes.append(i)
+            if succ in self.leaves and row["action"] in ("superseded", "moved", "folded") and i not in self.leaves[succ].supersedes:
+                self.leaves[succ].supersedes.append(i)
 
     def branch_of(self, i):
         """The branch a leaf belongs to: its own `branch:` or the nearest ancestor's; "" for the whole project.  dte:B54"""
@@ -504,13 +505,13 @@ class Tree:
         if i in memo:
             return memo[i]
         memo[i] = ""
-        node = self.nodes.get(i)
+        node = self.leaves.get(i)
         if node is None:
             return ""
         b = node.branch
         if not b:
             for p in node.parents:
-                if p in self.nodes:
+                if p in self.leaves:
                     b = self.branch_of(p)
                     if b:
                         break
@@ -573,7 +574,7 @@ class Tree:
             items.append(("note", slug, '"%s"  (%s)' % (title, self.rel(path)),
                           "read it and act: a decision becomes dte new or an inbox item, a correction becomes an edit, "
                           "a question gets an answer in chat; then dte outbox --done %s" % slug))
-        for node in self.ordered_nodes():
+        for node in self.ordered_leaves():
             for act in node.actions:
                 items.append(("tag", node.id, "%s  #%s" % (node.label(), act),
                               ACTIONS[act]
@@ -643,11 +644,11 @@ class Tree:
         if not ID_RE.match(node.id):
             self.errors.append("%s: bad or missing id %r" % (rel, node.id))
             return
-        if node.id in self.nodes:
+        if node.id in self.leaves:
             self.errors.append("%s: duplicate id %s (also %s)"
-                               % (rel, node.id, self.rel(self.nodes[node.id].path)))
+                               % (rel, node.id, self.rel(self.leaves[node.id].path)))
             return
-        self.nodes[node.id] = node
+        self.leaves[node.id] = node
 
     def _load_inbox(self, path):
         rel = self.rel(path)
@@ -675,13 +676,13 @@ class Tree:
 
     def resolve(self, i):
         """No aliases: an id resolves to itself or to nothing.  dte:B32"""
-        return i if i in self.nodes else None
+        return i if i in self.leaves else None
 
     def ordered(self, ids=None):
-        return sorted(ids if ids is not None else self.nodes, key=id_key)
+        return sorted(ids if ids is not None else self.leaves, key=id_key)
 
-    def ordered_nodes(self):
-        return [self.nodes[i] for i in self.ordered()]
+    def ordered_leaves(self):
+        return [self.leaves[i] for i in self.ordered()]
 
     # -- validation (rules R1..R9 in SPEC)
     def validate(self, as_ring=None):
@@ -692,7 +693,7 @@ class Tree:
         names = {}   # handle -> id
         uuids = {}   # uuid -> id  dte:B58
         here = None
-        for node in self.ordered_nodes():
+        for node in self.ordered_leaves():
             i = node.id
             u = node.uuid
             if not u:
@@ -739,19 +740,19 @@ class Tree:
             for heading in _empty_sections(node.body):   # a half-done edit leaves a heading with nothing under it
                 W.append("%s: section '%s' is empty; fill it or delete the heading" % (i, heading))
             if node.ratified_by and "## Contest" in node.body.split("\n"):   # dte:B41
-                W.append("%s: ratified but still carries '## Contest'; a ratified node is present governance, drop it" % i)
+                W.append("%s: ratified but still carries '## Contest'; a ratified leaf is present governance, drop it" % i)
             # R1 parents  dte:B10
             if node.ring == "A" and node.parents:
-                E.append("%s: core (A) nodes cannot have parents" % i)
+                E.append("%s: core (A) leaves cannot have parents" % i)
             if node.ring != "A" and not node.parents:
-                E.append("%s: non-core node has no parents" % i)
+                E.append("%s: non-core leaf has no parents" % i)
             for p in node.parents:
                 pid = self.resolve(p)
                 if pid is None:
                     E.append("%s: ORPHAN, parent %s %s; re-parent, supersede, or revert %s"
                              % (i, p, self.retired_hint(p), i))
                     continue
-                parent = self.nodes[pid]
+                parent = self.leaves[pid]
                 if ring_depth(parent.ring) >= ring_depth(node.ring):
                     E.append("%s: parent %s is not in a shallower ring" % (i, pid))
                 # R4 orphans  dte:B24
@@ -765,7 +766,7 @@ class Tree:
                 sb = self.resolve(str(node.superseded_by or ""))
                 if not sb:
                     E.append("%s: superseded but superseded_by is missing or unknown" % i)
-                elif i not in self.nodes[sb].supersedes:
+                elif i not in self.leaves[sb].supersedes:
                     W.append("%s: superseded_by %s, but %s does not list it in supersedes" % (i, sb, sb))
             elif node.superseded_by:
                 E.append("%s: superseded_by set but status is %s" % (i, node.status))
@@ -777,22 +778,22 @@ class Tree:
                     elif self.retired[s]["successor"] and self.retired[s]["successor"] != i:
                         W.append("%s: supersedes %s but the ledger says %s went to %s"
                                  % (i, s, s, self.retired[s]["successor"]))
-                elif self.nodes[sid].status != "superseded":
+                elif self.leaves[sid].status != "superseded":
                     E.append("%s: supersedes %s but %s has status %s"
-                             % (i, sid, sid, self.nodes[sid].status))
+                             % (i, sid, sid, self.leaves[sid].status))
             # R2 conflicts  dte:B4
             for c in node.conflicts_with:
                 cid = self.resolve(c)
                 if cid is None:
                     E.append("%s: conflicts_with %s %s" % (i, c, self.retired_hint(c)))
-                elif self.nodes[cid].in_effect and node.in_effect \
-                        and self.nodes[cid].ring == node.ring:
+                elif self.leaves[cid].in_effect and node.in_effect \
+                        and self.leaves[cid].ring == node.ring:
             # a same-ring contradiction is a refinement filed as a sibling: dte:B35
                     E.append("%s: same-ring contradiction with %s; supersede or move one" % (i, cid))
             # R7 human-held protection  dte:B11
             if CONFIG["protect_human"] and node.human_held and not node.authorized_by:
                 if node.status in ("superseded", "reverted"):
-                    E.append("%s: human-held node is %s without authorized_by naming a human"
+                    E.append("%s: human-held leaf is %s without authorized_by naming a human"
                              % (i, node.status))
             if node.in_effect and not self.children.get(i):
                 self._leaf_ids.add(i)
@@ -804,10 +805,10 @@ class Tree:
                     E.append("%s:%d: cites %s, which %s" % (rel, ln, cid, self.retired_hint(cid)))
                 else:
                     E.append("%s:%d: citation to unknown id %s" % (rel, ln, cid))
-            elif not self.nodes[resolved].in_effect:
-                W.append("%s:%d: cites %s which is %s" % (rel, ln, cid, self.nodes[resolved].status))
+            elif not self.leaves[resolved].in_effect:
+                W.append("%s:%d: cites %s which is %s" % (rel, ln, cid, self.leaves[resolved].status))
         enforced = self.enforced_ids()
-        for node in self.ordered_nodes():
+        for node in self.ordered_leaves():
             if not node.in_effect:
                 continue
             # a leaf cites only up its lineage: one that leans on a deeper decision can't be weighed alone  dte:B49
@@ -821,7 +822,7 @@ class Tree:
                 W.append("%s: states a MUST that no test cites; cite it from the test that enforces it, or add an"
                          " *Unenforced:* line to Consequences saying why it can't be checked" % node.id)
         here = self.current_branch()
-        for node in self.ordered_nodes():   # dte:B54
+        for node in self.ordered_leaves():   # dte:B54
             b = self.branch_of(node.id)
             if b and here and here != "HEAD" and b != here and node.branch:
                 W.append("%s: belongs to branch %s but is on %s; a branch-local subtree never merges out (port the"
@@ -836,13 +837,13 @@ class Tree:
             if rel in foreign:
                 continue   # a branch-local leaf leaving a branch it never belonged to (B54), or a renumber (B58)
             if code == "R":
-                E.append("%s: node file renamed; use dte move (a move is a new id plus retirement)" % rel)
+                E.append("%s: leaf file renamed; use dte move (a move is a new id plus retirement)" % rel)
             elif gone_id not in self.retired:
-                E.append("%s: node file deleted with no ledger line; use dte retire" % rel)
+                E.append("%s: leaf file deleted with no ledger line; use dte retire" % rel)
             elif CONFIG["retire"] == "keep":
-                E.append("%s: node file deleted but retire = keep; restore it with a status instead" % rel)
-            elif gone_id in self.nodes:
-                E.append("%s: deleted and retired, yet %s still exists as a node" % (rel, gone_id))
+                E.append("%s: leaf file deleted but retire = keep; restore it with a status instead" % rel)
+            elif gone_id in self.leaves:
+                E.append("%s: deleted and retired, yet %s still exists as a leaf" % (rel, gone_id))
         if as_ring:
             self._check_authority(as_ring)
         else:   # dte:B52 a tree change with no ring declared can't be checked against one
@@ -860,8 +861,8 @@ class Tree:
         as_ring = as_ring.upper()
         changed, exact = self.changed_files()
         if not exact:
-            W.append("git unavailable or not a repository; treating every node as changed (--as check is coarse)")
-        by_path = {self.rel(n.path): n for n in self.nodes.values()}
+            W.append("git unavailable or not a repository; treating every leaf as changed (--as check is coarse)")
+        by_path = {self.rel(n.path): n for n in self.leaves.values()}
         for rel in sorted(changed):
             node = by_path.get(rel)
             if node is None:
@@ -873,7 +874,7 @@ class Tree:
                 old = self.node_at_head(rel)
                 if old is not None and not old.human_held:
                     continue   # this change IS the ratification; the report lists it for the human
-                E.append("%s: human-held node changed without authorized_by (agent at ring %s)"
+                E.append("%s: human-held leaf changed without authorized_by (agent at ring %s)"
                          % (node.id, as_ring))
         renumbered = self.renumbered_paths()
         for code, rel in self.retired_paths():   # deleted this working tree  dte:C11
@@ -887,11 +888,11 @@ class Tree:
                          % (gone_id, as_ring, gone_id[0], holder_of(gone_id[0], CONFIG)))
             old = self.node_at_head(rel)
             if old is not None and CONFIG["protect_human"] and old.human_held and not auth:
-                E.append("%s: human-held node deleted without authorized_by in the ledger (agent at ring %s)"
+                E.append("%s: human-held leaf deleted without authorized_by in the ledger (agent at ring %s)"
                          % (gone_id, as_ring))
 
     def node_at_head(self, rel):
-        """The node as committed at HEAD, or None."""
+        """The leaf as committed at HEAD, or None."""
         try:
             out = subprocess.run(["git", "-C", self.root, "show", "HEAD:" + rel],
                                  capture_output=True, text=True, check=True).stdout
@@ -925,11 +926,11 @@ class Tree:
         """(set of changed relpaths, exact?)"""
         rows = self.git_status()
         if rows is None:
-            return {self.rel(n.path) for n in self.nodes.values()}, False
+            return {self.rel(n.path) for n in self.leaves.values()}, False
         return {p for _, p, _ in rows}, True
 
     def retired_paths(self):
-        """Node files git says were deleted or renamed, excluding the inbox.  dte:C11"""
+        """Leaf files git says were deleted or renamed, excluding the inbox.  dte:C11"""
         rows = self.git_status()
         if rows is None:
             return []
@@ -952,24 +953,24 @@ class Tree:
             if not r or self.layer_of(rel) == "docs":   # dte:B37 docs describe; specs, tests, agents, code reach
                 continue
             impl[r].add(rel)
-            if self.nodes[r].ring == "A":
+            if self.leaves[r].ring == "A":
                 core_lines.append((rel, ln, r))
-        n_noncore = sum(1 for n in self.nodes.values() if n.ring != "A" and n.in_effect)
+        n_noncore = sum(1 for n in self.leaves.values() if n.ring != "A" and n.in_effect)
         n_art = len(self.scanned_files)
         F = []
-        for n in self.ordered_nodes():
+        for n in self.ordered_leaves():
             if not n.in_effect:
                 continue
             for p in n.parents:
                 pid = self.resolve(p)
                 # a skip the owner made or accepted is deliberate: under a human-held parent, or on a human-held leaf
-                if pid and (n.human_held or self.nodes[pid].human_held):
+                if pid and (n.human_held or self.leaves[pid].human_held):
                     continue
-                if pid and ring_depth(n.ring) - ring_depth(self.nodes[pid].ring) > 1:
+                if pid and ring_depth(n.ring) - ring_depth(self.leaves[pid].ring) > 1:
                     between = chr(ord(n.ring) - 1)
                     F.append(("skipped ring", n.id,
                               "parent %s is at ring %s; a ring %s decision is missing, or %s belongs at ring %s"
-                              % (pid, self.nodes[pid].ring, between, n.id, between)))
+                              % (pid, self.leaves[pid].ring, between, n.id, between)))
             if n.ring == "A":
                 continue
             desc = self.descendants(n.id)
@@ -988,12 +989,12 @@ class Tree:
                           % (len(desc), 100 * d_share, len(files), 100 * f_share)))
         for rel, ln, r in core_lines:
             F.append(("core-only code", "%s:%d" % (rel, ln),
-                      "cites core node %s directly; no rule-level decision explains this line, add one or cite something more specific" % r))
+                      "cites core leaf %s directly; no rule-level decision explains this line, add one or cite something more specific" % r))
         return F
 
     def unratified(self):
         """Shallowest ring first, then widest: an unsettled rule high up unsettles everything under it.  dte:C23"""
-        un = [n for n in self.ordered_nodes()
+        un = [n for n in self.ordered_leaves()
               if n.made_by in ("ai", "joint") and not n.ratified_by and n.in_effect]
         return sorted(un, key=lambda n: (ring_depth(n.ring), -len(self.descendants(n.id)), n.number))
 
@@ -1032,7 +1033,7 @@ class Tree:
 
     def renumbered_paths(self):
         """Deleted or renamed leaf files whose HEAD uuid lives on under another id: a renumber, not a deletion.  dte:B58"""
-        live = {n.uuid: n.id for n in self.nodes.values() if n.uuid}
+        live = {n.uuid: n.id for n in self.leaves.values() if n.uuid}
         out = set()
         for code, rel in self.retired_paths():
             old = self.node_at_head(rel)
@@ -1085,7 +1086,7 @@ class Tree:
         changed, exact = self.changed_files()
         if not exact:
             return []
-        by_path = {self.rel(n.path): n for n in self.nodes.values()}
+        by_path = {self.rel(n.path): n for n in self.leaves.values()}
         out = []
         for rel in sorted(changed):
             node = by_path.get(rel)
@@ -1225,12 +1226,12 @@ class Tree:
     MAX_CHAINS = 64
 
     def ancestors(self, i):
-        """Parent chains from i to the core, memoised and capped: a node with several
+        """Parent chains from i to the core, memoised and capped: a leaf with several
         parents in each of several rings has combinatorially many chains."""
         memo = self.__dict__.setdefault("_anc", {})
         if i in memo:
             return memo[i]
-        node = self.nodes[i]
+        node = self.leaves[i]
         if not node.parents:
             memo[i] = [[i]]
             return memo[i]
@@ -1313,12 +1314,12 @@ def print_inbox(tree):
         print("    ASK %s: where does this belong?  then: dte place %s <ring> --by <name>" % (who, it.slug))
 
 
-def print_changed_nodes(tree):
+def print_changed_leaves(tree):
     """dte:C7"""
     changed, exact = tree.changed_files()
     if not exact:
         return
-    by_path = {tree.rel(n.path): n for n in tree.nodes.values()}
+    by_path = {tree.rel(n.path): n for n in tree.leaves.values()}
     hits = [by_path[r] for r in sorted(changed) if r in by_path]
     if not hits:
         return
@@ -1379,7 +1380,7 @@ def cmd_scope(tree, args):
         print("MIGRATION CANDIDATES (%d): comment-heavy files with no citation (B38)" % len(rows))
         for rel, n, _ in rows:
             print("  %-50s %4d comment lines" % (rel, n))
-        print("\nWHY comments move into a node's Why; HOW into a spec; WHAT stays. A heuristic, not a finding.")
+        print("\nWHY comments move into a leaf's Why; HOW into a spec; WHAT stays. A heuristic, not a finding.")
         return 0
     F = tree.scope_findings()
     if not F:
@@ -1393,7 +1394,7 @@ def cmd_scope(tree, args):
             continue
         print("%s (%d):" % (kind.upper(), len(by_kind[kind])))
         for subject, msg in by_kind[kind]:
-            label = tree.nodes[subject].label() if subject in tree.nodes else subject
+            label = tree.leaves[subject].label() if subject in tree.leaves else subject
             print("  %s\n    %s" % (label, msg))
         print()
     print("%d findings. Advisory: thresholds and docs globs are in dte.cfg." % len(F))
@@ -1403,7 +1404,7 @@ def cmd_scope(tree, args):
 def cmd_validate(tree, args):
     ok = tree.validate(as_ring=args.as_ring)
     report(tree, full=args.full)
-    print_changed_nodes(tree)
+    print_changed_leaves(tree)
     n_out = len(tree.outbox_items())
     if n_out:
         print("\nOUTBOX (%d): the human designated things in the vault for an agent; run dte outbox" % n_out)
@@ -1411,8 +1412,8 @@ def cmd_validate(tree, args):
     if F:
         print("\n%d scope findings (advisory): run dte scope" % len(F))
     n_cited = len({r for r, _, _, _ in tree.citations})
-    print("\n%d nodes, %d pending, %d citations in %d/%d artifacts, %d errors, %d warnings"
-          % (len(tree.nodes), len(tree.inbox), len(tree.citations), n_cited,
+    print("\n%d leaves, %d pending, %d citations in %d/%d artifacts, %d errors, %d warnings"
+          % (len(tree.leaves), len(tree.inbox), len(tree.citations), n_cited,
              len(tree.scanned_files), len(tree.errors), len(tree.warnings)))
     print("OK" if ok else "FAILED")
     return 0 if ok else 1
@@ -1430,7 +1431,7 @@ def cmd_tree(tree, args):
     seen = set()
 
     def walk(i, depth):
-        node = tree.nodes[i]
+        node = tree.leaves[i]
         marker = " (again)" if i in seen else ""
         print("  " * depth + node.label() + marker)
         if i in seen:
@@ -1443,19 +1444,19 @@ def cmd_tree(tree, args):
             walk(c, depth + 1)
 
     if args.under:
-        if args.under not in tree.nodes:
+        if args.under not in tree.leaves:
             print("unknown id: %s (%s)" % (args.under, tree.retired_hint(args.under)))
             return 2
         walk(args.under, 0)
         return 0
     for i in tree.ordered():
-        if tree.nodes[i].ring == "A":
+        if tree.leaves[i].ring == "A":
             walk(i, 0)
-    stray = [i for i in tree.ordered() if tree.nodes[i].ring != "A" and i not in seen]
+    stray = [i for i in tree.ordered() if tree.leaves[i].ring != "A" and i not in seen]
     if stray:
         print("\nNot reachable from the core:")
         for i in stray:
-            print("  " + tree.nodes[i].label())
+            print("  " + tree.leaves[i].label())
     if tree.inbox:
         print_inbox(tree)
     return 0
@@ -1468,21 +1469,21 @@ def cmd_blast(tree, args):
     if target is None:
         print("unknown id: %s" % args.id)
         return 2
-    node = tree.nodes[target]
+    node = tree.leaves[target]
     print("BLAST RADIUS of %s\n" % node.label())
     if node.human_held:
-        print("  This node is human-held. Changing it needs authorized_by from a human.  dte:B11\n")
+        print("  This leaf is human-held. Changing it needs authorized_by from a human.  dte:B11\n")
     desc = tree.descendants(target)
     by_ring = defaultdict(list)
     for d in desc:
-        by_ring[tree.nodes[d].ring].append(d)
+        by_ring[tree.leaves[d].ring].append(d)
     print("Descendant decisions (%d):" % len(desc))
     if not desc:
         print("  none")
     for ring in sorted(by_ring):
         print("  ring %s:" % ring)
         for d in tree.ordered(by_ring[ring]):
-            n = tree.nodes[d]
+            n = tree.leaves[d]
             print("    %s  via %s" % (n.label(), ", ".join(
                 p for p in n.parents if tree.resolve(p) in desc or tree.resolve(p) == target)))
     affected = {target} | set(desc)
@@ -1506,7 +1507,7 @@ def cmd_blast(tree, args):
         for s in node.supersedes:
             sid = tree.resolve(s)
             if sid:
-                print("  " + tree.nodes[sid].label())
+                print("  " + tree.leaves[sid].label())
             elif s in tree.retired:
                 print('  %s "%s"  %s' % (s, tree.retired[s]["title"], tree.retired_hint(s)))
             else:
@@ -1540,12 +1541,12 @@ def cmd_trace(tree, args):
     for r in seen:
         for chain in tree.ancestors(r):
             for i in chain:
-                if i in tree.nodes and i not in order:
+                if i in tree.leaves and i not in order:
                     order.append(i)
-    order.sort(key=lambda i: (-ring_depth(tree.nodes[i].ring), id_key(i)))
+    order.sort(key=lambda i: (-ring_depth(tree.leaves[i].ring), id_key(i)))
     print("\nDecisions, most specific first:")
     for i in order:
-        print("  " + tree.nodes[i].label())
+        print("  " + tree.leaves[i].label())
     return 0
 
 
@@ -1553,7 +1554,7 @@ def cmd_conflicts(tree, args):
     """dte:B4"""
     tree.validate()
     pairs = set()
-    for n in tree.nodes.values():
+    for n in tree.leaves.values():
         for c in n.conflicts_with:
             cid = tree.resolve(c)
             if cid:
@@ -1562,7 +1563,7 @@ def cmd_conflicts(tree, args):
         print("No declared contradictions.")
         return 0
     for a, b in sorted(pairs, key=lambda p: (id_key(p[0]), id_key(p[1]))):
-        na, nb = tree.nodes[a], tree.nodes[b]
+        na, nb = tree.leaves[a], tree.leaves[b]
         if not (na.in_effect and nb.in_effect):
             verdict = "moot (%s is %s, %s is %s)" % (a, na.status, b, nb.status)
         elif ring_depth(na.ring) < ring_depth(nb.ring):
@@ -1593,7 +1594,7 @@ def coverage_gauges(tree):
     specs = [f for f in scoped if tree.layer_of(f) == "specs"]
     spec_missing = [f for f in specs if f not in direct]
     enforced = tree.enforced_ids()
-    musts = [n for n in tree.ordered_nodes() if n.in_effect and n.has_must()]
+    musts = [n for n in tree.ordered_leaves() if n.in_effect and n.has_must()]
     m_tested = [n for n in musts if n.id in enforced]
     m_labeled = [n for n in musts if n.id not in enforced and UNENFORCED_RE.search(n.body)]
     m_bare = [n for n in musts if n.id not in enforced and not UNENFORCED_RE.search(n.body)]
@@ -1617,7 +1618,7 @@ def cmd_coverage(tree, args):
         print(e)
         return 2
     total, miss = len(g["scoped"]), len(g["missing"])
-    print("Coverage, one gauge per hop (100%% is the target; B45):\n")
+    print("Coverage, one gauge per hop (100% is the target; B45):\n")
     print("  artifacts  %4d/%-4d %5.1f%%  cite a leaf, or are built to a spec that does%s"
           % (total - miss, total, _pct(total - miss, total),
              ("  (%d through a spec's covers:)" % len(g["via"])) if g["via"] else ""))
@@ -1703,7 +1704,7 @@ def branch_ids(tree):
 
 def next_id(tree, ring):
     """Numbers are never reused: not from the tree, the ledger, or any branch.  dte:B32,C15"""
-    used = [n.number for n in tree.nodes.values() if n.ring == ring]
+    used = [n.number for n in tree.leaves.values() if n.ring == ring]
     used += [int(ID_RE.match(i).group(2)) for i in tree.retired if i.startswith(ring)]
     used += [int(ID_RE.match(i).group(2)) for i in branch_ids(tree) if i.startswith(ring)]
     return "%s%d" % (ring, (max(used) + 1) if used else 1)
@@ -1739,9 +1740,9 @@ def outbox_done(tree, ref):
             os.remove(path)
             print('removed outbox note "%s" (%s)' % (title, tree.rel(path)))
             return 0
-    node = tree.nodes.get(ref)
+    node = tree.leaves.get(ref)
     if node is None:
-        print("no outbox note or node called %s" % ref)
+        print("no outbox note or leaf called %s" % ref)
         return 2
     text = read_text(node.path)
     nl = "\r\n" if "\r\n" in text else "\n"
@@ -1805,17 +1806,17 @@ def cmd_place(tree, args):
         return 2
     parents = [p.strip() for p in (args.parents or "").split(",") if p.strip()] or item.parents
     if ring == "A" and parents:
-        print("ring A nodes cannot have parents")
+        print("ring A leaves cannot have parents")
         return 2
     if ring != "A" and not parents:
-        print("a ring %s node needs parents; pass --parents A1,B2" % ring)
+        print("a ring %s leaf needs parents; pass --parents A1,B2" % ring)
         return 2
     for p in parents:
         pid = tree.resolve(p)
         if pid is None:
             print("parent %s does not exist" % p)
             return 2
-        if ring_depth(tree.nodes[pid].ring) >= ring_depth(ring):
+        if ring_depth(tree.leaves[pid].ring) >= ring_depth(ring):
             print("parent %s is not shallower than ring %s" % (pid, ring))
             return 2
     new_id = next_id(tree, ring)
@@ -1896,13 +1897,13 @@ def rewrite_references(tree, old_id, new_id):
     """Every citation of OLD becomes NEW, with NEW's name where OLD's followed it, in artifacts and in
     leaf bodies (History excepted: it records what was true then); OLD -> NEW in children's parents.  dte:C9"""
     tree.scan()
-    old_name = tree.nodes[old_id].name if old_id in tree.nodes else ""
-    new_name = tree.nodes[new_id].name if new_id in tree.nodes else ""
+    old_name = tree.leaves[old_id].name if old_id in tree.leaves else ""
+    new_name = tree.leaves[new_id].name if new_id in tree.leaves else ""
     files = sorted({rel for rel, _, cid, _ in tree.citations if cid == old_id})
     for rel in files:
         path = os.path.join(tree.root, rel)
         write_text(path, rename_citations(read_text(path), old_id, new_id, old_name, new_name))
-    for leaf in tree.ordered_nodes():
+    for leaf in tree.ordered_leaves():
         if leaf.id == old_id or old_id not in tree.body_citations(leaf):
             continue
         text = read_text(leaf.path)
@@ -1910,11 +1911,11 @@ def rewrite_references(tree, old_id, new_id):
         write_text(leaf.path, rename_citations(head, old_id, new_id, old_name, new_name) + sep + hist)
     children = list(tree.children.get(old_id, []))
     for c in children:
-        cpath = tree.nodes[c].path
+        cpath = tree.leaves[c].path
         ctext = read_text(cpath)
         cnl = "\r\n" if "\r\n" in ctext else "\n"
         ctext = ctext.replace("\r\n", "\n")
-        ps = [new_id if p == old_id else p for p in tree.nodes[c].parents]
+        ps = [new_id if p == old_id else p for p in tree.leaves[c].parents]
         ctext = set_field(ctext, "parents", fm_ids(ps))
         write_text(cpath, ctext.replace("\n", cnl))
     return files, children
@@ -1925,14 +1926,14 @@ def cmd_retire(tree, args, carry_contest=False):
     writing the winner); a leaf that merely absorbed the retired one did not get contested.  dte:C22"""
     tree.validate()
     old_id, new_id = args.id, args.superseded_by
-    node = tree.nodes.get(old_id)
+    node = tree.leaves.get(old_id)
     if node is None:
         print("unknown id: %s (%s)" % (old_id, tree.retired_hint(old_id)))
         return 2
     if not node.in_effect and not new_id:
         new_id = str(node.superseded_by or "") or None
     if new_id:
-        new = tree.nodes.get(new_id)
+        new = tree.leaves.get(new_id)
         if new is None:
             print("successor %s does not exist" % new_id)
             return 2
@@ -1955,7 +1956,7 @@ def cmd_retire(tree, args, carry_contest=False):
         carried = _section(node.body, "## Contest") if (node.contested_by and carry_contest) else ""
         if carried:   # dte:C17,C22 the contest that produced the successor travels with it, and settles it
             t = _insert_section(t, "## Contest",
-                                "Carried from %s, which this node supersedes.\n\n%s" % (old_id, carried))
+                                "Carried from %s, which this leaf supersedes.\n\n%s" % (old_id, carried))
             if not new.contested_by:
                 t = set_field(t, "contested_by", node.contested_by)
                 t = append_history(t, "- %s settled by the contest of %s, which it supersedes (contested by %s)."
@@ -1974,14 +1975,14 @@ def cmd_retire(tree, args, carry_contest=False):
         for f in files:
             print("    " + f)
         for c in children:
-            print("    %s" % tree.nodes[c].label())
+            print("    %s" % tree.leaves[c].label())
     else:
         if files or children:
             print("  these now fail validation until re-pointed or retired (blast radius of the revert):")
             for f in files:
                 print("    " + f)
             for c in children:
-                print("    %s" % tree.nodes[c].label())
+                print("    %s" % tree.leaves[c].label())
         if node.supersedes:
             print("  %s had superseded: %s. Candidates to return." % (old_id, ", ".join(node.supersedes)))
     return 0
@@ -1994,12 +1995,12 @@ def cmd_move(tree, args):
     if not re.match(r"^[A-Z]$", ring):
         print("ring must be a single letter A-Z")
         return 2
-    node = tree.nodes.get(old_id)
+    node = tree.leaves.get(old_id)
     if node is None:
         print("unknown id: %s" % old_id)
         return 2
     if not node.in_effect:
-        print("%s is %s; only in-effect nodes move" % (old_id, node.status))
+        print("%s is %s; only in-effect leaves move" % (old_id, node.status))
         return 2
     if node.ring == ring:
         print("%s is already at ring %s" % (old_id, ring))
@@ -2011,30 +2012,30 @@ def cmd_move(tree, args):
         parents = [p.strip() for p in args.parents.split(",") if p.strip()]
     else:
         parents = [p for p in node.parents
-                   if p in tree.nodes and ring_depth(tree.nodes[p].ring) < ring_depth(ring)]
+                   if p in tree.leaves and ring_depth(tree.leaves[p].ring) < ring_depth(ring)]
     dropped = [p for p in node.parents if p not in parents]
     if ring == "A" and parents:
-        print("ring A nodes cannot have parents")
+        print("ring A leaves cannot have parents")
         return 2
     if ring != "A" and not parents:
         print("no parent of %s is shallower than ring %s; pass --parents" % (old_id, ring))
         return 2
     for p in parents:
-        if p not in tree.nodes:
+        if p not in tree.leaves:
             print("parent %s does not exist" % p)
             return 2
-        if ring_depth(tree.nodes[p].ring) >= ring_depth(ring):
+        if ring_depth(tree.leaves[p].ring) >= ring_depth(ring):
             print("parent %s is not shallower than ring %s" % (p, ring))
             return 2
     children = [c for c in tree.children.get(old_id, [])]
     for c in children:
-        if ring_depth(tree.nodes[c].ring) <= ring_depth(ring):
+        if ring_depth(tree.leaves[c].ring) <= ring_depth(ring):
             print("child %s is at ring %s, not deeper than %s; move or re-parent it first"
-                  % (c, tree.nodes[c].ring, ring))
+                  % (c, tree.leaves[c].ring, ring))
             return 2
     new_id = next_id(tree, ring)
     today = datetime.date.today().isoformat()
-    # new node
+    # new leaf
     text = read_text(node.path)
     nl = "\r\n" if "\r\n" in text else "\n"
     text = text.replace("\r\n", "\n")
@@ -2055,7 +2056,7 @@ def cmd_move(tree, args):
     os.makedirs(dest_dir, exist_ok=True)
     dest = os.path.join(dest_dir, new_id + ".md")
     write_text(dest, text.replace("\n", nl))
-    # old node
+    # old leaf
     fate = retire_node(tree, node, "moved", new_id, args.by, args.authorized_by,
                        "moved to ring %s as %s" % (ring, new_id))
     files, children = rewrite_references(tree, old_id, new_id)
@@ -2078,7 +2079,7 @@ def cmd_authority(tree, args):
         print("Authority map (advisory; binds agents, never humans):")
         for key, holder in CONFIG["authority"]:
             print("  %-3s %s" % (key, holder))
-    rings = sorted({n.ring for n in tree.nodes.values()} | ({args.ring.upper()} if args.ring else set()))
+    rings = sorted({n.ring for n in tree.leaves.values()} | ({args.ring.upper()} if args.ring else set()))
     print("\nWhom to ask, per ring in use:")
     for r in rings:
         print("  %s: %s" % (r, holder_of(r, CONFIG)))
@@ -2196,7 +2197,7 @@ def cmd_upgrade(tree, args):
     already holds go (status: active, made_by: ai, an empty conflicts_with, confidence, and under
     retire = delete supersedes and superseded_by). Idempotent.  dte:B43, dte:B58"""
     changed = 0
-    for node in tree.ordered_nodes():
+    for node in tree.ordered_leaves():
         text = read_text(node.path)
         nl = "\r\n" if "\r\n" in text else "\n"
         t = text.replace("\r\n", "\n")
@@ -2220,14 +2221,14 @@ def cmd_upgrade(tree, args):
         if t != before:
             write_text(node.path, t.replace("\n", nl))
             changed += 1
-    print("upgrade: %d of %d leaves rewritten to the %s format (frontmatter only)" % (changed, len(tree.nodes), VERSION))
+    print("upgrade: %d of %d leaves rewritten to the %s format (frontmatter only)" % (changed, len(tree.leaves), VERSION))
     if changed:
         print("  next: dte validate. Commit this on its own so the diff reads as a format change.")
     return 0
 
 
 def _swap_leaf(tree, node, new_id, history):
-    """Write node under new_id (same uuid: the same leaf) and remove the old file."""
+    """Write leaf under new_id (same uuid: the same leaf) and remove the old file."""
     text = read_text(node.path)
     nl = "\r\n" if "\r\n" in text else "\n"
     text = set_field(text.replace("\r\n", "\n"), "id", new_id)
@@ -2243,9 +2244,9 @@ def _swap_leaf(tree, node, new_id, history):
 def renumber_leaf(tree, old_id, new_id, by, why):
     """Same leaf, new number: citations, bodies and children follow. No ledger line, since the old number
     goes on naming whichever leaf holds it elsewhere; validate knows the leaf by its uuid.  dte:B58"""
-    node = tree.nodes[old_id]
+    node = tree.leaves[old_id]
     rewrite_references(tree, old_id, new_id)
-    node = Tree(tree.root, tree.decisions_dir).nodes[old_id]   # the rewrite may have touched its own file
+    node = Tree(tree.root, tree.decisions_dir).leaves[old_id]   # the rewrite may have touched its own file
     _swap_leaf(tree, node, new_id, "- %s renumbered from %s to %s by %s%s." % (
         datetime.date.today().isoformat(), old_id, new_id, by, (" (" + why + ")") if why else ""))
 
@@ -2253,7 +2254,7 @@ def renumber_leaf(tree, old_id, new_id, by, why):
 def cmd_renumber(tree, args):
     """dte:B58"""
     tree.validate()
-    node = tree.nodes.get(args.id)
+    node = tree.leaves.get(args.id)
     if node is None:
         print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
         return 2
@@ -2261,7 +2262,7 @@ def cmd_renumber(tree, args):
     if not ID_RE.match(new_id) or new_id[0] != node.ring:
         print("%s is not an id in ring %s; a renumber keeps the ring (a ring change is dte move)" % (new_id, node.ring))
         return 2
-    if new_id in tree.nodes or new_id in tree.retired or new_id in branch_ids(tree):
+    if new_id in tree.leaves or new_id in tree.retired or new_id in branch_ids(tree):
         print("%s is taken here, in the ledger, or on another branch" % new_id)
         return 2
     renumber_leaf(tree, args.id, new_id, args.by, args.note)
@@ -2300,7 +2301,7 @@ def cmd_merge_ids(tree, args):
         print("cannot read %s; is it a branch or commit git knows?" % args.ref)
         return 2
     clash = []
-    for node in tree.ordered_nodes():
+    for node in tree.ordered_leaves():
         u = theirs.get(node.id)
         if node.id in theirs and u and u == node.uuid:
             continue
@@ -2310,7 +2311,7 @@ def cmd_merge_ids(tree, args):
     if not clash:
         print("no id collisions with %s" % args.ref)
         return 0
-    taken = set(tree.nodes) | set(tree.retired) | set(theirs) | their_retired | branch_ids(tree)
+    taken = set(tree.leaves) | set(tree.retired) | set(theirs) | their_retired | branch_ids(tree)
     for old_id, why in clash:
         ring = old_id[0]
         n = max([int(i[1:]) for i in taken if i[0] == ring] + [0]) + 1
@@ -2350,7 +2351,7 @@ def cmd_fold(tree, args):
     Consequences become the parent's Consequences, its citations and children move to the parent, and
     the ledger records the fold.  dte:B48"""
     tree.validate()
-    node = tree.nodes.get(args.id)
+    node = tree.leaves.get(args.id)
     if node is None or not node.in_effect:
         print("unknown or retired id: %s" % args.id)
         return 2
@@ -2358,10 +2359,10 @@ def cmd_fold(tree, args):
     if into is None:
         print("%s has %d parents; name the one it folds into with --into" % (args.id, len(node.parents)))
         return 2
-    if into not in node.parents or into not in tree.nodes:
+    if into not in node.parents or into not in tree.leaves:
         print("%s is not a parent of %s; a leaf folds only into its own parent" % (into, args.id))
         return 2
-    parent = tree.nodes[into]
+    parent = tree.leaves[into]
     if _guard_human(node, args.authorized_by, "folding it") or _guard_human(parent, args.authorized_by, "folding into it"):
         return 2
     today = datetime.date.today().isoformat()
@@ -2377,7 +2378,7 @@ def cmd_fold(tree, args):
     fresh.validate()
     files, children = rewrite_references(fresh, node.id, into)
     fresh = Tree(tree.root, tree.decisions_dir)
-    fate = retire_node(fresh, fresh.nodes[node.id], "folded", into, args.by, args.authorized_by, "folded into %s" % into)
+    fate = retire_node(fresh, fresh.leaves[node.id], "folded", into, args.by, args.authorized_by, "folded into %s" % into)
     print('folded %s "%s" into %s' % (node.id, node.summary, parent.label()))
     print("  " + fate)
     print("  %d citing file(s) and %d child(ren) now point at %s; REVIEW the merged Consequences" % (len(files), len(children), into))
@@ -2389,7 +2390,7 @@ def cmd_to_spec(tree, args):
     and Consequences go under its title in the spec, the spec cites the leaf's parents, its citations and
     children move to those parents, and the ledger records where the text went.  dte:B47"""
     tree.validate()
-    node = tree.nodes.get(args.id)
+    node = tree.leaves.get(args.id)
     if node is None or not node.in_effect:
         print("unknown or retired id: %s" % args.id)
         return 2
@@ -2398,12 +2399,12 @@ def cmd_to_spec(tree, args):
         return 2
     if _guard_human(node, args.authorized_by, "moving it to a spec"):
         return 2
-    spec = os.path.abspath(args.spec)
+    spec = at_root(tree, args.spec)
     rel = tree.rel(spec)
     if tree.layer_of(rel) != "specs":
         print("%s is outside the specs globs in dte.cfg; a spec lives where they say" % rel)
         return 2
-    parents = [p for p in node.parents if p in tree.nodes]
+    parents = [p for p in node.parents if p in tree.leaves]
     if not os.path.exists(spec):
         os.makedirs(os.path.dirname(spec), exist_ok=True)
         write_text(spec, "%s\n# %s\n" % (comment_line(".md", cite_text(parents)), node.name or node.id))
@@ -2426,7 +2427,7 @@ def cmd_to_spec(tree, args):
         rewrite_references(fresh, node.id, parents[0])
     kids = list(fresh.children.get(node.id, []))
     for c in kids:   # a child of a mechanics leaf hangs from what the leaf served (rewrite put parents[0] there)
-        cn = Tree(tree.root, tree.decisions_dir).nodes[c]
+        cn = Tree(tree.root, tree.decisions_dir).leaves[c]
         ps = []
         for p in cn.parents + parents:
             if p != node.id and p not in ps:
@@ -2434,7 +2435,7 @@ def cmd_to_spec(tree, args):
         ct = read_text(cn.path)
         write_text(cn.path, set_field(ct, "parents", fm_ids(ps)))
     fresh = Tree(tree.root, tree.decisions_dir)
-    fate = retire_node(fresh, fresh.nodes[node.id], "to-spec", rel, args.by, args.authorized_by, "moved to %s" % rel)
+    fate = retire_node(fresh, fresh.leaves[node.id], "to-spec", rel, args.by, args.authorized_by, "moved to %s" % rel)
     print('%s "%s" is now spec text in %s' % (node.id, node.summary, rel))
     print("  " + fate)
     if files:
@@ -2554,13 +2555,13 @@ def build_frontmatter(fields):
 
 def check_parents(tree, ring, parents):
     if ring == "A" and parents:
-        return "ring A nodes cannot have parents"
+        return "ring A leaves cannot have parents"
     if ring != "A" and not parents:
-        return "a ring %s node needs parents; pass --parents A1,B2" % ring
+        return "a ring %s leaf needs parents; pass --parents A1,B2" % ring
     for p in parents:
-        if p not in tree.nodes:
+        if p not in tree.leaves:
             return "parent %s %s" % (p, tree.retired_hint(p))
-        if ring_depth(tree.nodes[p].ring) >= ring_depth(ring):
+        if ring_depth(tree.leaves[p].ring) >= ring_depth(ring):
             return "parent %s is not shallower than ring %s" % (p, ring)
     return None
 
@@ -2614,7 +2615,7 @@ def cmd_new(tree, args):
     if not NAME_RE.match(args.name):
         print("a name is a camelCase identifier like shareImpl")
         return 2
-    if any(n.name == args.name and n.in_effect for n in tree.nodes.values()):
+    if any(n.name == args.name and n.in_effect for n in tree.leaves.values()):
         print("name %s is already taken" % args.name)
         return 2
     warn_unfetched(tree)
@@ -2638,7 +2639,7 @@ IMPORT_FIELDS = KNOWN_FIELDS - {"id", "uuid", "superseded_by", "supersedes", "co
 
 
 def cmd_import(tree, args):
-    """Re-home an existing corpus: one markdown file per node, every property carried
+    """Re-home an existing corpus: one markdown file per leaf, every property carried
     through, parents by name or id, ids allocated parent-first.  dte:B33,C20"""
     tree.validate()
     src = os.path.abspath(args.dir)
@@ -2659,7 +2660,7 @@ def cmd_import(tree, args):
         key = os.path.splitext(fn)[0]
         items.append((key, data, body, path))
     errors = []
-    names = {n.name: n.id for n in tree.nodes.values() if n.name and n.in_effect}
+    names = {n.name: n.id for n in tree.leaves.values() if n.name and n.in_effect}
     keys = {}
     for key, data, body, path in items:
         ring = str(data.get("ring") or "").upper()
@@ -2667,7 +2668,7 @@ def cmd_import(tree, args):
             errors.append("%s: needs ring: <letter>" % key)
         for f in data:
             if f not in IMPORT_FIELDS:
-                errors.append("%s: unknown property %r; import carries only node properties (B33)" % (key, f))
+                errors.append("%s: unknown property %r; import carries only leaf properties (B33)" % (key, f))
         if not data.get("title"):
             errors.append("%s: title is required" % key)
         if "## Decision" not in body or "## Why" not in body:
@@ -2686,7 +2687,7 @@ def cmd_import(tree, args):
     # parents: an existing id, an existing name, or another file in the batch (by file name or name)
     by_key = {k: (d, b, p) for k, d, b, p in items}
     def parent_ref(ref):
-        if ref in tree.nodes:
+        if ref in tree.leaves:
             return ("id", ref)
         if ref in names:
             return ("id", names[ref])
@@ -2706,7 +2707,7 @@ def cmd_import(tree, args):
             ref = _scalar(str(ref))
             got = parent_ref(ref)
             if got is None:
-                errors.append("%s: parent %r is not an existing node or a file in the batch" % (key, ref)); return False
+                errors.append("%s: parent %r is not an existing leaf or a file in the batch" % (key, ref)); return False
             if got[0] == "batch" and not visit(got[1]):
                 return False
         visiting.discard(key); seen.add(key); order.append(key)
@@ -2729,15 +2730,15 @@ def cmd_import(tree, args):
         for ref in (ps if isinstance(ps, list) else [ps]):
             kind, val = parent_ref(_scalar(str(ref)))
             parents.append(val if kind == "id" else assigned[val])
-        err = check_parents(tree, ring, [p for p in parents if p in tree.nodes]) if all(p in tree.nodes for p in parents) else None
+        err = check_parents(tree, ring, [p for p in parents if p in tree.leaves]) if all(p in tree.leaves for p in parents) else None
         for pid in parents:
-            pring = tree.nodes[pid].ring if pid in tree.nodes else pid[0]
+            pring = tree.leaves[pid].ring if pid in tree.leaves else pid[0]
             if ring_depth(pring) >= ring_depth(ring):
                 err = "parent %s is not shallower than ring %s" % (pid, ring)
         if ring != "A" and not parents:
-            err = "a ring %s node needs parents" % ring
+            err = "a ring %s leaf needs parents" % ring
         if ring == "A" and parents:
-            err = "ring A nodes cannot have parents"
+            err = "ring A leaves cannot have parents"
         if err:
             print("%s: %s" % (key, err))
             for w in written:
@@ -2769,7 +2770,7 @@ def cmd_import(tree, args):
         dest = os.path.join(dest_dir, new_id + ".md")
         write_text(dest, text)
         written.append(dest)
-        tree.nodes[new_id] = Leaf(dest, parse_frontmatter(text)[0], body)
+        tree.leaves[new_id] = Leaf(dest, parse_frontmatter(text)[0], body)
         print("  %s  <-  %s  %s" % (new_id, key, str(data["title"])[:70]))
     print("imported %d leaves from %s. They are re-homed content: no contest is owed at import (B28, B33)."
           % (len(written), source))
@@ -2781,7 +2782,7 @@ def cmd_show(tree, args):
     """dte:B29"""
     tree.validate()
     i = args.id
-    node = tree.nodes.get(i)
+    node = tree.leaves.get(i)
     if node is None:
         if i in tree.retired:
             row = tree.retired[i]
@@ -2807,7 +2808,7 @@ def cmd_show(tree, args):
     if node.parents:
         print("  parents:")
         for p in node.parents:
-            print("    " + (tree.nodes[p].label() if p in tree.nodes else "%s (%s)" % (p, tree.retired_hint(p))))
+            print("    " + (tree.leaves[p].label() if p in tree.leaves else "%s (%s)" % (p, tree.retired_hint(p))))
         print("  lineage to the core:")
         for chain in tree.ancestors(i):
             print("    " + "  <-  ".join(chain))
@@ -2816,7 +2817,7 @@ def cmd_show(tree, args):
     kids = tree.ordered(tree.children.get(i, []))
     print("  children (%d):" % len(kids))
     for c in kids:
-        print("    " + tree.nodes[c].label())
+        print("    " + tree.leaves[c].label())
     by_layer = tree.cited_by(i)
     n_hits = sum(len(v) for v in by_layer.values())
     print("  citing artifacts (%d), derived from citations, never stored here:" % n_hits)
@@ -2843,7 +2844,7 @@ def cmd_find(tree, args):
     """dte:B29"""
     q = args.text.lower()
     n = 0
-    for node in tree.ordered_nodes():
+    for node in tree.ordered_leaves():
         hay = (node.id + " " + node.summary + " " + node.body).lower()
         if q in hay:
             n += 1
@@ -2867,11 +2868,11 @@ def cmd_find(tree, args):
 
 
 def cmd_authorize(tree, args):
-    """Record a human's go-ahead on an existing node: authorized_by plus a History line.  dte:C21,B11"""
+    """Record a human's go-ahead on an existing leaf: authorized_by plus a History line.  dte:C21,B11"""
     tree.validate()
     code = 0
     for i in args.ids:
-        node = tree.nodes.get(i)
+        node = tree.leaves.get(i)
         if node is None:
             print("unknown id: %s (%s)" % (i, tree.retired_hint(i)))
             code = 2
@@ -2896,15 +2897,15 @@ def cmd_ratify(tree, args):
 
 
 def ratify_one(tree, i, by):
-    node = tree.nodes.get(i)
+    node = tree.leaves.get(i)
     if node is None:
         print("unknown id: %s (%s)" % (i, tree.retired_hint(i)))
         return 2
     if not node.in_effect:
-        print("%s is %s; only in-effect nodes are ratified" % (i, node.status))
+        print("%s is %s; only in-effect leaves are ratified" % (i, node.status))
         return 2
     if node.made_by == "human":
-        print("%s is human-made; ratification is for ai and joint nodes" % i)
+        print("%s is human-made; ratification is for ai and joint leaves" % i)
         return 2
     text = read_text(node.path)
     nl = "\r\n" if "\r\n" in text else "\n"
@@ -2967,17 +2968,24 @@ def _citation_only(line):
     return all(c in "#/*<!->;%'\"-{}()" for c in rest)
 
 
+def at_root(tree, p):
+    """A path the user typed: as given when it exists from here or is absolute, else relative to --root."""
+    if os.path.isabs(p) or os.path.exists(p):
+        return os.path.abspath(p)
+    return os.path.join(tree.root, p)
+
+
 def cmd_cite(tree, args):
     """dte:C14"""
     ids = split_ids(args.ids)
     for i in ids:
-        if i not in tree.nodes:
+        if i not in tree.leaves:
             print("cannot cite %s: %s" % (i, tree.retired_hint(i)))
             return 2
-        if not tree.nodes[i].in_effect:
-            print("cannot cite %s: it is %s" % (i, tree.nodes[i].status))
+        if not tree.leaves[i].in_effect:
+            print("cannot cite %s: it is %s" % (i, tree.leaves[i].status))
             return 2
-    path = os.path.abspath(args.file)
+    path = at_root(tree, args.file)
     if not os.path.isfile(path):
         print("no such file: %s" % args.file)
         return 2
@@ -3047,15 +3055,15 @@ def cmd_brief(tree, args):
     if not re.match(r"^[A-Z]$", ring):
         print("ring must be a single letter A-Z")
         return 2
-    above = [n for n in tree.ordered_nodes() if n.in_effect and ring_depth(n.ring) < ring_depth(ring)]
+    above = [n for n in tree.ordered_leaves() if n.in_effect and ring_depth(n.ring) < ring_depth(ring)]
     scope_note = ""
     if args.under:
-        if args.under not in tree.nodes:
+        if args.under not in tree.leaves:
             print("unknown id: %s (%s)" % (args.under, tree.retired_hint(args.under)))
             return 2
         keep = {args.under}
         for chain in tree.ancestors(args.under):
-            keep.update(x for x in chain if x in tree.nodes)
+            keep.update(x for x in chain if x in tree.leaves)
         keep.update(tree.descendants(args.under))
         above = [n for n in above if n.id in keep]
         scope_note = " relevant to %s" % args.under
@@ -3065,19 +3073,23 @@ def cmd_brief(tree, args):
     print()
     print("Rules:")
     print("  1. Decide only at ring %s or deeper. Create decisions with" % ring)
-    print("     `python %s new %s --title \"...\" --by <you> --parents <ids> --decision \"...\" --why \"...\"`." % (tool, ring))
+    print("     `python %s new %s --name <camelCase> --title \"...\" --by <you> --parents <ids> --decision \"...\" --why \"...\"`." % (tool, ring))
+    print("     A leaf is a call a person could make in plain words; a sentence that would still be true had the")
+    print("     opposite been chosen is mechanics and goes in the spec (B47). A child decides a question its parent")
+    print("     leaves open; one that only details its parent folds back into it (B48).")
     if prev:
         print("  2. Anything that belongs at ring %s or shallower, or whose ring is unclear, is not yours:" % prev)
         print("     write decisions/inbox/<slug>.md and ask %s." % holder_of(prev, CONFIG))
     else:
         print("  2. You hold the core. Nothing is above you.")
     print("  3. Cite what your work serves: `python %s cite <file> <ID>`. Refer to every decision as ID plus its name." % tool)
-    print("  4. Never change a decision made or ratified by a human. Before you finish, run")
-    print("     `DTE_RING=%s python %s validate`; it must print OK." % (ring, tool))
-    print("  5. Before acting under a node marked unratified and not contested, run `python %s contest <ID>`" % tool)
+    print("  4. Never change a decision made or ratified by a human. If your environment refuses an edit to the tree,")
+    print("     stop and ask for an authorization that names the leaves; never route around the refusal (B53).")
+    print("     Before you finish, run `DTE_RING=%s python %s validate`; it must print OK." % (ring, tool))
+    print("  5. Before acting under a leaf marked unratified and not contested, run `python %s contest <ID>`" % tool)
     print("     and follow it: build the alternatives, scope their cost, judge by the parents, record the verdict.")
-    print("     A contested or ratified node is settled: act on it and never re-ask (A7, B28).")
-    print("     A node marked imported was re-homed, not decided; its contest is owed before the first new work under it.")
+    print("     A contested or ratified leaf is settled: act on it and never re-ask (A7, B28).")
+    print("     A leaf marked imported was re-homed, not decided; its contest is owed before the first new work under it.")
     print()
     print("Decisions above your ring that bind you%s (%d):" % (scope_note, len(above)))
     cur = None
@@ -3089,7 +3101,7 @@ def cmd_brief(tree, args):
         print("    %s%s" % (n.label(), held))
     if args.under:
         print()
-        print("Your subtree: `python %s tree --under %s`; read any node with `python %s show <ID>`."
+        print("Your subtree: `python %s tree --under %s`; read any leaf with `python %s show <ID>`."
               % (tool, args.under, tool))
     return 0
 
@@ -3103,7 +3115,7 @@ def spec_skeleton(tree, node):
            "## Purpose", "", _section(node.body, "## Decision").strip() or "TODO", "",
            "## Constraints", ""]
     for p in node.parents:
-        pn = tree.nodes.get(p)
+        pn = tree.leaves.get(p)
         if pn:
             out.append("- %s %s: %s" % (pn.id, pn.name or pn.title, " ".join(_section(pn.body, "## Decision").split())))
     cons = _section(node.body, "## Consequences").strip()
@@ -3114,11 +3126,11 @@ def spec_skeleton(tree, node):
     out += ["", "## Covered decisions", ""]
     desc = tree.descendants(node.id)
     for i in tree.ordered(desc):
-        c = tree.nodes[i]
+        c = tree.leaves[i]
         if c.in_effect:
             out.append("- %s %s: %s" % (c.id, c.name or c.title, " ".join(_section(c.body, "## Decision").split())))
     if not desc:
-        out.append("- none yet; requirements below are decided here and may become child nodes")
+        out.append("- none yet; requirements below are decided here and may become child leaves")
     out += ["", "## Requirements", "", "TODO one numbered requirement per behaviour, each naming the decision it serves.", "",
             "## Out of scope", "", "TODO", "",
             "## Gaps", "",
@@ -3128,7 +3140,7 @@ def spec_skeleton(tree, node):
 
 def cmd_spec(tree, args):
     """dte:C26"""
-    node = tree.nodes.get(args.id)
+    node = tree.leaves.get(args.id)
     if node is None:
         print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
         return 2
@@ -3178,7 +3190,7 @@ def builder_brief(tree, spec):
     print()
     print("Rules:")
     print("  1. Build exactly what the spec says. You decide nothing: never run new, contest, place, retire or move,")
-    print("     and never read decisions/. Unratified nodes are not your concern; you have no ring.")
+    print("     and never read decisions/. Unratified leaves are not your concern; you have no ring.")
     print("  2. Every file you create or substantially change carries the spec's citation at the top:")
     print("     `python %s cite <file> %s`." % (tool, ",".join(ids) if ids else "<IDs the spec names>"))
     print("  3. When the spec is silent, ambiguous or contradicts itself, stop that part and file the gap:")
@@ -3220,7 +3232,7 @@ def cmd_hook(tree, args):
 
 def cmd_reparent(tree, args):
     """The one way a leaf's parents change: an orphan's, or a same-ring move of any leaf.  dte:B29,B24,B11"""
-    node = tree.nodes.get(args.id)
+    node = tree.leaves.get(args.id)
     if node is None:
         print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
         return 2
@@ -3229,15 +3241,15 @@ def cmd_reparent(tree, args):
         return 2
     parents = split_ids(args.parents)
     if args.id in parents:
-        print("a node cannot be its own parent")
+        print("a leaf cannot be its own parent")
         return 2
     err = check_parents(tree, node.ring, parents)
     if err:
         print(err)
         return 2
     for p in parents:
-        if not tree.nodes[p].in_effect:
-            print("parent %s is %s; pick an in-effect node" % (p, tree.nodes[p].status))
+        if not tree.leaves[p].in_effect:
+            print("parent %s is %s; pick an in-effect leaf" % (p, tree.leaves[p].status))
             return 2
     text = read_text(node.path)
     nl = "\r\n" if "\r\n" in text else "\n"
@@ -3267,8 +3279,8 @@ FIELD_OWNER = {                            # where a refused field is actually c
 
 
 def cmd_set(tree, args):
-    """dte:C18, dte:B29, dte:B11 (a change to a human-held node needs a human's name)"""
-    node = tree.nodes.get(args.id)
+    """dte:C18, dte:B29, dte:B11 (a change to a human-held leaf needs a human's name)"""
+    node = tree.leaves.get(args.id)
     if node is None:
         print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
         return 2
@@ -3281,7 +3293,7 @@ def cmd_set(tree, args):
             print("unknown field %s; set changes one of: %s  (B29)" % (field, ", ".join(SETTABLE)))
         return 2
     if not node.in_effect:
-        print("%s is %s; set a field on an in-effect node" % (args.id, node.status))
+        print("%s is %s; set a field on an in-effect leaf" % (args.id, node.status))
         return 2
     new = " ".join(args.value.split())
     if not new:
@@ -3294,7 +3306,7 @@ def cmd_set(tree, args):
     if field == "name" and not NAME_RE.match(new):
         print("a name is a camelCase identifier like shareImpl")
         return 2
-    if field == "name" and any(n.name == new and n.in_effect for n in tree.nodes.values()):
+    if field == "name" and any(n.name == new and n.in_effect for n in tree.leaves.values()):
         print("name %s is already taken" % new)
         return 2
     if CONFIG["protect_human"] and node.human_held and not args.authorized_by:
@@ -3389,17 +3401,17 @@ CONTEST_CHOICES = ("keep", "opposite", "deletion", "variant")
 
 
 def cmd_contest(tree, args):
-    """dte:C17, dte:B28 (one contest per unratified node, then it is settled)"""
+    """dte:C17, dte:B28 (one contest per unratified leaf, then it is settled)"""
     tree.validate()
-    node = tree.nodes.get(args.id)
+    node = tree.leaves.get(args.id)
     if node is None:
         print("unknown id: %s (%s)" % (args.id, tree.retired_hint(args.id)))
         return 2
     if not node.in_effect:
-        print("%s is %s; only in-effect nodes are contested" % (args.id, node.status))
+        print("%s is %s; only in-effect leaves are contested" % (args.id, node.status))
         return 2
     if node.human_held:
-        print("%s is human-held; a human-made or ratified node is settled and is never contested (B28)" % args.id)
+        print("%s is human-held; a human-made or ratified leaf is settled and is never contested (B28)" % args.id)
         return 2
     if args.record:
         return record_contest(tree, node, args)
@@ -3418,24 +3430,24 @@ def cmd_contest(tree, args):
     print()
     print("Rubric (the parents): read them, judge by them, never touch them.")
     for p in node.parents:
-        print("  " + (tree.nodes[p].label() if p in tree.nodes else "%s (%s)" % (p, tree.retired_hint(p))))
+        print("  " + (tree.leaves[p].label() if p in tree.leaves else "%s (%s)" % (p, tree.retired_hint(p))))
     if not node.parents:
-        print("  none: %s is a core node; the rubric is the project's purpose as the owner stated it" % node.id)
+        print("  none: %s is a core leaf; the rubric is the project's purpose as the owner stated it" % node.id)
     print()
     print("Build each alternative far enough to scope its cost, then judge them against the rubric alone.")
-    print("Children of %s (%d) and artifacts citing it (%d) count for nothing: a better node may need none of them."
+    print("Children of %s (%d) and artifacts citing it (%d) count for nothing: a better leaf may need none of them."
           % (node.id, len(kids), len(cites)))
     print("Do not reopen parents, siblings, or children in this contest.")
     # dte:B40
-    print("A Why that names the incident that forced the node is load-bearing; one that names none is")
+    print("A Why that names the incident that forced the leaf is load-bearing; one that names none is")
     print("preventive judgment and the thinner claim (B40 originInWhy). Weigh it so.")
     print()
     print("  keep      %s as written" % node.id)
     print("  opposite  the decision reversed")
-    print("  deletion  no node here; the parents alone must explain what %s explains" % node.id)
+    print("  deletion  no leaf here; the parents alone must explain what %s explains" % node.id)
     print("  variant   optional: a third way the rubric permits")
     print()
-    print("Record the verdict and move on. The node is then settled until a human ratifies it (A7):")
+    print("Record the verdict and move on. The leaf is then settled until a human ratifies it (A7):")
     print("  python %s contest %s --record --chosen <%s> --by <you> --note \"...\" [--file NOTES.md]"
           % (tool, node.id, "|".join(CONTEST_CHOICES)))
     print("If keep did not win: write the winner with `python %s new %s ...`, then"
@@ -3518,24 +3530,24 @@ def cmd_conflict(tree, args):
     """dte:B29, dte:B4"""
     a, b = args.a, args.b
     if a == b:
-        print("a node cannot contradict itself")
+        print("a leaf cannot contradict itself")
         return 2
     for x in (a, b):
-        if x not in tree.nodes:
+        if x not in tree.leaves:
             print("unknown id: %s (%s)" % (x, tree.retired_hint(x)))
             return 2
-        if not tree.nodes[x].in_effect:
-            print("%s is %s" % (x, tree.nodes[x].status))
+        if not tree.leaves[x].in_effect:
+            print("%s is %s" % (x, tree.leaves[x].status))
             return 2
     for x, y in ((a, b), (b, a)):
-        n = tree.nodes[x]
+        n = tree.leaves[x]
         if y not in n.conflicts_with:
             text = read_text(n.path)
             nl = "\r\n" if "\r\n" in text else "\n"
             text = text.replace("\r\n", "\n")
             text = set_field(text, "conflicts_with", fm_ids(n.conflicts_with + [y]))
             write_text(n.path, text.replace("\n", nl))
-    na, nb = tree.nodes[a], tree.nodes[b]
+    na, nb = tree.leaves[a], tree.leaves[b]
     print("declared: %s  vs  %s" % (na.label(), nb.label()))
     if ring_depth(na.ring) < ring_depth(nb.ring):
         print("  %s wins (ring %s over %s)" % (a, na.ring, nb.ring))
@@ -3561,14 +3573,14 @@ def cmd_retired(tree, args):
 def cmd_export(tree, args):
     """dte:C12"""
     tree.validate()
-    nodes = []
-    for n in tree.ordered_nodes():
+    leaves = []
+    for n in tree.ordered_leaves():
         d = {k: v for k, v in n.raw.items()}
         d["ring"] = n.ring
         d["path"] = tree.rel(n.path)
-        nodes.append(d)
+        leaves.append(d)
     data = {
-        "nodes": nodes,
+        "leaves": leaves,
         "citations": [{"file": rel, "line": ln, "id": cid} for rel, ln, cid, r in tree.citations],
         "retired": [tree.retired[i] for i in sorted(tree.retired, key=id_key)],
         "inbox": [{"slug": it.slug, "title": it.title, "proposed_ring": it.proposed_ring,
@@ -3580,8 +3592,8 @@ def cmd_export(tree, args):
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
             fh.write(text + "\n")
-        print("wrote %s: %d nodes, %d citations, %d retired, %d inbox"
-              % (args.out, len(nodes), len(data["citations"]), len(data["retired"]), len(data["inbox"])))
+        print("wrote %s: %d leaves, %d citations, %d retired, %d inbox"
+              % (args.out, len(leaves), len(data["citations"]), len(data["retired"]), len(data["inbox"])))
     else:
         print(text)
     return 0
@@ -3610,7 +3622,7 @@ def render_decisions(src_tree):
            "Every in-effect decision of DTE itself, rendered. These are DTE's, not this",
            "project's: read them, cite nothing here, and never re-create them as leaves.", ""]
     cur = None
-    for n in src_tree.ordered_nodes():
+    for n in src_tree.ordered_leaves():
         if not n.in_effect:
             continue
         if n.ring != cur:
@@ -3689,7 +3701,7 @@ def cmd_vendor(tree, args):
             print("\nDTE's rules changed since the last vendor. Each new A or B leaf may ask a sweep of your tree"
                   " (%s/ADOPTING.md, When the rules change):" % rel_dest)
             for i in added:
-                n = src_tree.nodes.get(i)
+                n = src_tree.leaves.get(i)
                 print("  new      %s" % after[i])
                 if n:
                     print("           " + " ".join(_section(n.body, "## Decision").split())[:220])
@@ -3741,11 +3753,11 @@ def main(argv=None):
     ap.add_argument("--decisions", default=None)
     sub = ap.add_subparsers(dest="cmd", required=True)
     v = sub.add_parser("validate")
-    v.add_argument("--full", action="store_true", help="list every unratified node instead of the count (C23)")
+    v.add_argument("--full", action="store_true", help="list every unratified leaf instead of the count (C23)")
     v.add_argument("--as", dest="as_ring", default=os.environ.get("DTE_RING") or None, metavar="RING",
-                   help="check changed nodes against an agent's ring (B15); default $DTE_RING")
+                   help="check changed leaves against an agent's ring (B15); default $DTE_RING")
     t = sub.add_parser("tree")
-    t.add_argument("--files", action="store_true", help="show citing artifacts under each node")
+    t.add_argument("--files", action="store_true", help="show citing artifacts under each leaf")
     t.add_argument("--under", default=None, metavar="ID", help="print only the subtree under ID")
     sub.add_parser("blast").add_argument("id")
     sub.add_parser("trace").add_argument("path")
@@ -3773,13 +3785,13 @@ def main(argv=None):
     m.add_argument("--by", required=True, help="who is moving it")
     m.add_argument("--parents", default=None, help="comma-separated parent ids")
     m.add_argument("--authorized-by", dest="authorized_by", default=None,
-                   help="human authorising the move of a human-held node")
+                   help="human authorising the move of a human-held leaf")
     r = sub.add_parser("retire")
     r.add_argument("id")
     r.add_argument("--by", required=True, help="who is retiring it")
     r.add_argument("--superseded-by", dest="superseded_by", default=None, help="successor id")
     r.add_argument("--authorized-by", dest="authorized_by", default=None,
-                   help="human authorising the retirement of a human-held node")
+                   help="human authorising the retirement of a human-held leaf")
     a = sub.add_parser("authority")
     a.add_argument("ring", nargs="?", default=None)
     n = sub.add_parser("new")
@@ -3797,7 +3809,7 @@ def main(argv=None):
     n.add_argument("--why", default=None, help="text of the Why section")
     n.add_argument("--consequences", default=None, help="text of the Consequences section")
     n.add_argument("--authorized-by", dest="authorized_by", default=None,
-                   help="human authorising an agent to write this node above its ring")
+                   help="human authorising an agent to write this leaf above its ring")
     sub.add_parser("show").add_argument("id")
     sub.add_parser("unratified")
     im = sub.add_parser("import")
@@ -3847,7 +3859,7 @@ def main(argv=None):
     st.add_argument("value")
     st.add_argument("--by", required=True)
     st.add_argument("--authorized-by", dest="authorized_by", default=None,
-                    help="the human authorising a change to a human-held node (B11)")
+                    help="the human authorising a change to a human-held leaf (B11)")
     ct = sub.add_parser("contest")
     ct.add_argument("id")
     ct.add_argument("--record", action="store_true", help="write the verdict instead of printing the brief")
@@ -3855,14 +3867,14 @@ def main(argv=None):
     ct.add_argument("--by", default=None, help="who judged")
     ct.add_argument("--note", default=None, help="the alternatives, their scoped costs, and the verdict")
     ct.add_argument("--file", default=None, help="markdown file holding the same, appended before --note")
-    ct.add_argument("--again", action="store_true", help="contest a node that was already contested")
+    ct.add_argument("--again", action="store_true", help="contest a leaf that was already contested")
     ct.add_argument("--title", default=None, help="with --record and a non-keep verdict: write the winner with this title (C22)")
     ct.add_argument("--name", default=None, help="the winner's camelCase name")
     ct.add_argument("--body-file", dest="body_file", default=None, help="the winner's body; or use --decision/--why")
     ct.add_argument("--decision", default=None)
     ct.add_argument("--why", default=None)
     ct.add_argument("--consequences", default=None)
-    ct.add_argument("--retire", action="store_true", help="with --chosen deletion: revert the node now")
+    ct.add_argument("--retire", action="store_true", help="with --chosen deletion: revert the leaf now")
     ct.add_argument("--authorized-by", dest="authorized_by", default=None)
     cf = sub.add_parser("conflict")
     cf.add_argument("a")
@@ -3876,7 +3888,7 @@ def main(argv=None):
     ci.add_argument("ids", help="comma-separated ids")
     br = sub.add_parser("brief")
     br.add_argument("ring", nargs="?", default=None)
-    br.add_argument("--under", default=None, metavar="ID", help="restrict binding nodes to one subtree")
+    br.add_argument("--under", default=None, metavar="ID", help="restrict binding leaves to one subtree")
     br.add_argument("--builder", default=None, metavar="SPEC", help="brief an agent that builds to this spec and holds no ring (C27)")
     sp = sub.add_parser("spec")
     sp.add_argument("id")
@@ -3907,7 +3919,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    # Windows consoles default to cp1252; a node body with an arrow must not crash show.
+    # Windows consoles default to cp1252; a leaf body with an arrow must not crash show.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
