@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B59,B10,B11,B12,B13,B14,B15,B16,B21,B32,B29,B27,B30,B31,C19,B33,B34,B35,B61,B37,C20,C21,C22,C23,C24 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B59,B10,B11,B12,B13,B14,B15,B16,B21,B32,B29,B27,B30,B31,B33,B34,B35,B61,B37,C21,B60,C23 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section cites the decision it derives from; the decision file holds the rationale.
@@ -26,7 +26,7 @@ DTE is not a dependency graph. It records *why*, not *what calls what* (dte:A4, 
 - **Inbox**: where a decision waits, without an ID, until someone with authority places it in a ring (dte:B14).
 - **Outbox**: the human-to-agent channel: a note in `decisions/outbox/`, an action tag on a node, or a `ratified_by` typed in by hand (dte:B31).
 - **Name**: the node's camelCase handle, unique among in-effect nodes, which always accompanies its ID when a model refers to it (dte:A5, dte:B32). **Title** is the one-sentence description behind it (dte:B16).
-- **Ledger**: `decisions/RETIRED`, one line per retired node. Burns the number for ever and records who retired it (dte:B24, dte:C11).
+- **Ledger**: `decisions/RETIRED`, one line per retired node. Burns the number for ever and records who retired it (dte:B24, dte:B24).
 
 ## 3. Identity and rings (dte:B32)
 
@@ -112,7 +112,7 @@ A node is an Architecture Decision Record with more structure. Against the MADR 
 ## 5. Citations (dte:B3)
 
 - Token: `dte:` immediately followed by one or more IDs separated by commas. Examples: `dte:B3`, `dte:B6,C1`. Case-sensitive. No spaces before the ID.
-- Wikilink: `[[B3]]` or `[[B3|text]]` is the same citation in Obsidian's spelling (dte:B30, dte:C19). Both forms are read everywhere; `links` in `dte.cfg` picks which one the tool writes.
+- Wikilink: `[[B3]]` or `[[B3|text]]` is the same citation in Obsidian's spelling (dte:B30, dte:B30). Both forms are read everywhere; `links` in `dte.cfg` picks which one the tool writes.
 - Examples in prose use the placeholder ring `ZZ`: `dte:ZZ1`, `[[ZZ1]]`. Two letters is not an ID shape, so it is never a citation and never an error.
 - Place it in a comment for code, or in prose or an HTML comment for docs. A file-level citation at the top says why the file exists. Line-level citations say why a specific block exists.
 - A citation replaces the comment that held the reason (dte:B38). WHY prose lives in the node, HOW prose in a spec, and a code comment says WHAT the block is and does. The tool's `scope --comments` lists comment-heavy files with no citation as migration candidates.
@@ -124,7 +124,7 @@ A node is an Architecture Decision Record with more structure. Against the MADR 
 
 - **R1 (dte:B10)** Every non-core node has at least one parent. Core nodes have none. Every parent is in a strictly shallower ring.
 - **R2 (dte:B4)** Two active nodes that contradict each other are resolved by ring: shallower wins. Two contradicting nodes in the *same* ring are an error; resolve by superseding one or moving one. A node that narrows, excepts or supports another belongs below it as a child (dte:B35): a same-ring contradiction usually means a refinement was filed as a sibling.
-- **R3 (dte:B24, dte:C11)** A node is retired only through the ledger. In delete mode the file is removed and git keeps the text; in keep mode the file stays with `status` set. A deleted node file with no ledger line, or a renamed node file, is an error. Retired numbers are never reissued.
+- **R3 (dte:B24, dte:B24)** A node is retired only through the ledger. In delete mode the file is removed and git keeps the text; in keep mode the file stays with `status` set. A deleted node file with no ledger line, or a renamed node file, is an error. Retired numbers are never reissued.
 - **R4 (dte:B24)** An in-effect node whose parent is retired is an **orphan**. Orphans are errors: re-parent, supersede, or revert them. This is how A1 is enforced: reverting a node forces its blast radius to be dealt with, not forgotten.
 - **R5 (dte:B59)** Every node records `made_by` and `by`. AI-made nodes may be `active` without ratification so agents are not blocked, but tools surface every unratified AI node until a human sets `ratified_by`. A decision nobody remembers making is reconstructed as `made_by: ai`, low confidence (dte:B34). A hand edit to a body adds a History line; validate flags a body change without one (dte:B61).
 - **R6 (dte:A2)** The goal is total coverage: every artifact cites at least one node. Coverage below 100% is not an error (adoption is incremental, dte:B22) but it is always reported.
@@ -134,15 +134,15 @@ A node is an Architecture Decision Record with more structure. Against the MADR 
 
 ## 7. Operations
 
-**Add a decision.** `dte new <ring> --name camelCase --title "..." --by <name> --parents A1 [--decision "..." --why "..." | --body-file NODE.md]`. The tool allocates the ID and writes the node; unfilled sections are `TODO` and validate warns until they are written. `--body-file` takes the sections verbatim (dte:C20). Cite it from the artifacts it produces. Run `dte validate`. Frontmatter is never hand-edited (dte:B29).
+**Add a decision.** `dte new <ring> --name camelCase --title "..." --by <name> --parents A1 [--decision "..." --why "..." | --body-file NODE.md]`. The tool allocates the ID and writes the node; unfilled sections are `TODO` and validate warns until they are written. `--body-file` takes the sections verbatim (dte:B33). Cite it from the artifacts it produces. Run `dte validate`. Frontmatter is never hand-edited (dte:B29).
 
-**Import an existing corpus (dte:B33, dte:C20).** `dte import <dir> --by <who>` lifts one markdown file per node: frontmatter `ring`, `title`, optional `name`, `parents` (ids, names, or other files in the batch by name) and any node property the source already carries, all written unchanged; the body verbatim. IDs are allocated parent-first. Each node gets one History line, `imported from <source>`, and that line is the mark: an imported node is re-homed content, not a new decision, and owes its contest before the first new work under it, not at import.
+**Import an existing corpus (dte:B33, dte:B33).** `dte import <dir> --by <who>` lifts one markdown file per node: frontmatter `ring`, `title`, optional `name`, `parents` (ids, names, or other files in the batch by name) and any node property the source already carries, all written unchanged; the body verbatim. IDs are allocated parent-first. Each node gets one History line, `imported from <source>`, and that line is the mark: an imported node is re-homed content, not a new decision, and owes its contest before the first new work under it, not at import.
 
 **Supersede.** Write the new node. Run `dte blast OLD`. Then `dte retire OLD --by <name> --superseded-by NEW [--authorized-by <human>]`: the tool adds OLD to NEW's `supersedes`, rewrites every citation and child of OLD to NEW and prints them for review (they were built under OLD), writes the ledger line, and deletes or keeps the file per `retire`.
 
 **Revert.** `dte retire OLD --by <name> [--authorized-by <human>]` with no successor. Citations and children of OLD are left as they are and now fail validation with a hint: that list is the blast radius of the revert. Each orphaned child is fixed with `dte reparent <ID> --parents ... --by <name>` or retired; each citation is re-pointed with `dte cite` or removed. Nodes OLD had superseded are printed as candidates to return.
 
-**Move (promote or demote).** Moving changes precedence (dte:A1, dte:B32). A move is a supersession with the same text at a different ring. Use `dte move <ID> <ring> --by <name> [--parents ...] [--authorized-by <human>]`, which does all of the following in one run (dte:C9):
+**Move (promote or demote).** Moving changes precedence (dte:A1, dte:B32). A move is a supersession with the same text at a different ring. Use `dte move <ID> <ring> --by <name> [--parents ...] [--authorized-by <human>]`, which does all of the following in one run (dte:B32):
 1. Refuses if a child would not be strictly deeper than the new ring: move or re-parent the child first. Refuses a human-held node without `--authorized-by`.
 2. Allocates the new ID and writes the new node with the old body, `supersedes: [OLD]`, and `ratified_by` cleared, because precedence changed.
 3. Keeps the old parents that are still strictly shallower, or takes `--parents`. Every dropped parent is named: its blast radius shrank.
@@ -150,13 +150,13 @@ A node is an Architecture Decision Record with more structure. Against the MADR 
 5. Rewrites `dte:OLD` in every artifact and `OLD` in every child's `parents`.
 Then run `dte blast` on each dropped parent, and `dte conflicts` if the node has declared contradictions: promotion means it now wins ones it lost. Never `git mv` or hand-delete a node file; validation rejects renames and ledger-less deletions.
 
-**Set a field (dte:B29, dte:C18).** `dte set <ID> title|name|confidence <value> --by <name> [--authorized-by <human>]` is the one generic frontmatter write, for the fields that carry no invariant (`name` is checked for shape and uniqueness and rewrites `aliases`). Every other field belongs to the command that owns its invariant, and `set` names that command when refused. Provenance fields are never changed after creation (dte:A3). The old value goes to History.
+**Set a field (dte:B29, dte:B29).** `dte set <ID> title|name|confidence <value> --by <name> [--authorized-by <human>]` is the one generic frontmatter write, for the fields that carry no invariant (`name` is checked for shape and uniqueness and rewrites `aliases`). Every other field belongs to the command that owns its invariant, and `set` names that command when refused. Provenance fields are never changed after creation (dte:A3). The old value goes to History.
 
 **Ratify.** `dte ratify <ID> --by <human>` sets `ratified_by`, flips `proposed` to `active`, drops `## Contest` and logs the drop in one History line (dte:B62). `## Alternatives considered` stays. A ratified node is human-held from then on (dte:B11). `validate` warns when a ratified node still carries a Contest section.
 
 **Authorize (dte:C21).** `dte authorize <ID> --by <human> [--note ...]` records a human's go-ahead on a node that already exists: `authorized_by` plus a History line. It is how an owner's "go ahead" reaches a node an agent drafted above its ring, and the only writer of that field.
 
-**Contest (dte:B60).** An unratified node is not a block, but before a tree agent first builds new work under it (a child, a spec, an artifact) the agent runs `dte contest <ID>` (dte:C17). An import owes none (dte:B33). The tool prints the node, its parents as the rubric, and four slots: keep, opposite, deletion, variant. The agent builds each alternative far enough to scope its cost, judges them against the parents alone, and records the verdict with `dte contest <ID> --record --chosen <slot> --by <name> --note "..."`. Parents are read, never reopened. Siblings are not touched. Children and citing artifacts count for nothing, not even as cost: a better node may need none of them. If keep did not win, the agent writes the winner with `new` and retires the loser, or does both in the same run with `--record --chosen variant --title ... --body-file ...` (dte:C22); a successor that carries the loser's contest is marked contested by it. A contested node is settled (dte:A7): it is acted on without re-asking until a human ratifies it or an agent supersedes it; a second contest needs `--again`. Ratification then reviews a comparison with costs, not a bare proposal.
+**Contest (dte:B60).** An unratified node is not a block, but before a tree agent first builds new work under it (a child, a spec, an artifact) the agent runs `dte contest <ID>` (dte:B60). An import owes none (dte:B33). The tool prints the node, its parents as the rubric, and four slots: keep, opposite, deletion, variant. The agent builds each alternative far enough to scope its cost, judges them against the parents alone, and records the verdict with `dte contest <ID> --record --chosen <slot> --by <name> --note "..."`. Parents are read, never reopened. Siblings are not touched. Children and citing artifacts count for nothing, not even as cost: a better node may need none of them. If keep did not win, the agent writes the winner with `new` and retires the loser, or does both in the same run with `--record --chosen variant --title ... --body-file ...` (dte:B60); a successor that carries the loser's contest is marked contested by it. A contested node is settled (dte:A7): it is acted on without re-asking until a human ratifies it or an agent supersedes it; a second contest needs `--again`. Ratification then reviews a comparison with costs, not a bare proposal.
 
 **Declare a contradiction.** `dte conflict <A> <B>` writes `conflicts_with` on both nodes and prints the winner by ring (dte:B4).
 
@@ -184,9 +184,9 @@ Then say so in chat, with the title. Validate and tree print PENDING PLACEMENT w
 
 **Authorise an override (dte:B11).** To retire or move a human-held node, a human sets `authorized_by:` on it. An AI may prepare the change but the field must name a person.
 
-**Spec (dte:A8, dte:C26).** `dte spec <ID> [--out FILE]` renders a spec skeleton from a node: its citation at the top, its Decision as the purpose, its parents' Decisions and its Consequences as constraints, every descendant as a covered decision, and empty Requirements, Out of scope and Gaps. A tree agent fills it. The spec cites the node; the node never lists its specs (dte:B37).
+**Spec (dte:A8, dte:A8).** `dte spec <ID> [--out FILE]` renders a spec skeleton from a node: its citation at the top, its Decision as the purpose, its parents' Decisions and its Consequences as constraints, every descendant as a covered decision, and empty Requirements, Out of scope and Gaps. A tree agent fills it. The spec cites the node; the node never lists its specs (dte:B37).
 
-**Build to a spec (dte:B42, dte:C27).** `dte brief --builder <spec>` prints the builder rules and the spec: build exactly what it says, cite the IDs it names, decide nothing, never read `decisions/`, and when the spec is silent stop and file `dte gap <spec> --title "..." --by <who>`. A gap is an inbox item with `kind: gap` naming the spec; `inbox` lists gaps apart from decisions, `place` refuses them, and whoever holds the spec answers in the spec and removes the file.
+**Build to a spec (dte:B42, dte:B42).** `dte brief --builder <spec>` prints the builder rules and the spec: build exactly what it says, cite the IDs it names, decide nothing, never read `decisions/`, and when the spec is silent stop and file `dte gap <spec> --title "..." --by <who>`. A gap is an inbox item with `kind: gap` naming the spec; `inbox` lists gaps apart from decisions, `place` refuses them, and whoever holds the spec answers in the spec and removes the file.
 
 ## 8. Blast radius (dte:C2)
 
@@ -233,7 +233,7 @@ The advisory map in `dte.cfg` (`authority = A:human, B:orchestrator, C+:subagent
 | `scan_self`     | `off`   | scan the running tool file; only DTE's own repo sets it (C24) |
 | `links`         | `token` | `token` writes `dte:ID`; `wikilink` writes `[[ID]]` for Obsidian (B30, C19) |
 
-## 12. Scope checks and layers (dte:B21, dte:C8, dte:B37)
+## 12. Scope checks and layers (dte:B21, dte:B21, dte:B37)
 
 The tree holds why. Below it, artifacts are told apart by the `dte.cfg` globs: `specs` (what to build), `tests` (what enforces), `agents` (instruction files that carry process rules), `docs` (what describes), and everything else is code. A node stores none of this; `show` derives "specified by", "implemented by", "enforced by", "instructs" and "described by" from citations at read time, and `coverage` lists in-effect nodes with no citing test.
 
@@ -248,7 +248,7 @@ The thresholds are guesses until calibrated on a large tree. Ring balance (equal
 
 ## 13. Tooling contract (dte:B6)
 
-A conforming tool is a single file with no dependencies beyond the language runtime, and implements (dte:B29): asking the tree with `show`, `find`, `tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`, `scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it with `new`, `cite` (dte:C14), `ratify`, `conflict`, `reparent`, `set` (dte:C18), `contest` (dte:C17), `move`, `retire`, `inbox`, `outbox` (dte:B31), `place`, `import` (dte:C20), `authorize` (dte:C21), `unratified` (dte:C23), `spec` (dte:C26), `gap` and `brief --builder` (dte:C27); and `validate` (a summary by default, `--full` for the whole unratified list) (with `--as`, defaulting to `$DTE_RING`), `export` (JSON: nodes, citations, ledger, inbox; the join surface for structural tools, dte:C12), `init` (scaffold, dte:C13), `vendor` (copy DTE's rule text and a render of its decisions into an ignored directory, stamped with the source commit, dte:C25, dte:B39), and `hook` (pre-commit validate, dte:C14). Every output that names a node prints `ID name: title` unless summaries are off. The reference implementation is `tools/dte.py`. Exit code is non-zero when `validate` finds errors.
+A conforming tool is a single file with no dependencies beyond the language runtime, and implements (dte:B29): asking the tree with `show`, `find`, `tree` (with `--under`), `blast`, `trace`, `conflicts`, `coverage`, `scope`, `retired`, `authority`, `next`, `brief` (dte:B27); changing it with `new`, `cite` (dte:B29), `ratify`, `conflict`, `reparent`, `set` (dte:B29), `contest` (dte:B60), `move`, `retire`, `inbox`, `outbox` (dte:B31), `place`, `import` (dte:B33), `authorize` (dte:C21), `unratified` (dte:C23), `spec` (dte:A8), `gap` and `brief --builder` (dte:B42); and `validate` (a summary by default, `--full` for the whole unratified list) (with `--as`, defaulting to `$DTE_RING`), `export` (JSON: nodes, citations, ledger, inbox; the join surface for structural tools, dte:B29), `init` (scaffold, dte:B29), `vendor` (copy DTE's rule text and a render of its decisions into an ignored directory, stamped with the source commit, dte:B39, dte:B39), and `hook` (pre-commit validate, dte:B29). Every output that names a node prints `ID name: title` unless summaries are off. The reference implementation is `tools/dte.py`. Exit code is non-zero when `validate` finds errors.
 
 ## 14. Open questions (not yet decided)
 

@@ -36,7 +36,7 @@ decisions/
   outbox/      human -> agent: notes and tagged nodes
   RETIRED      ledger of retired ids; numbers are never reused
 specs/         what to build; each spec cites the node it serves
-tools/dte.py   # dte:B6,C3   <- code cites the decisions it serves
+tools/dte.py   # dte:B6,B3   <- code cites the decisions it serves
 ```
 
 A decision node is a markdown file. Its frontmatter is written by the tool, never by hand (dte:B29):
@@ -95,7 +95,7 @@ python tools/dte.py authorize <ID> --by <human> # record a human's go-ahead on a
 python tools/dte.py brief C --under B3   # the block to hand a subagent working at ring C
 python tools/dte.py spec B3 --out specs/b3.md   # a spec skeleton from a node, for a tree agent to fill
 python tools/dte.py brief --builder specs/b3.md # the block to hand a builder: spec only, no ring, no tree
-python tools/dte.py gap specs/b3.md --title "..." --by builder   # the spec is silent: file a gap in the inbox (dte:C27)
+python tools/dte.py gap specs/b3.md --title "..." --by builder   # the spec is silent: file a gap in the inbox (dte:B42)
 
 # check and integrate
 python tools/dte.py validate --as C   # consistency; as an agent at ring C, did I overstep?

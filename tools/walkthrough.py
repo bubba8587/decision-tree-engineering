@@ -1,4 +1,4 @@
-"""Regenerate WALKTHROUGH.md from real runs of dte on a toy project.  dte:B29,C14
+"""Regenerate WALKTHROUGH.md from real runs of dte on a toy project.  dte:B29
 
 Run: python tools/walkthrough.py
 """

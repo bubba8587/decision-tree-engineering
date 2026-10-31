@@ -11,3 +11,21 @@ B7	2026-10-31	superseded	B59	Claude Opus 5.5	project owner	provenanceFields: Pro
 B28	2026-10-31	superseded	B60	Claude Opus 5.5	project owner	oneContest: A tree agent contests an unratified node once, before the first new work under it; then it stands
 B36	2026-10-31	superseded	B61	Claude Opus 5.5	-	bodyEditsLogged: A hand edit to a node body carries a History line; validate flags body changes that lack one
 B41	2026-10-31	superseded	B62	Claude Opus 5.5	-	presentGovernance: A node is present governance: History is one line per event; ratify drops the Contest section
+C3	2026-10-31	to-spec	specs/scanning.md	Claude Opus 5.5	-	scannerWalk: The scanner walks all text files, skipping .git, the decisions dir, binaries, and .dteignore globs
+C24	2026-10-31	to-spec	specs/scanning.md	Claude Opus 5.5	-	layerGlobs: specs, tests and agents globs classify citing artifacts; show groups them; scan_self for dogfooding
+C8	2026-10-31	to-spec	specs/scanning.md	Claude Opus 5.5	-	reachDefinition: Reach is descendants plus implementing artifacts; broad means either share exceeds a threshold
+C19	2026-10-31	to-spec	specs/scanning.md	Claude Opus 5.5	-	bothLinkForms: The tool reads dte:ID and [[ID]] everywhere; links in dte.cfg picks the written form; outbox command
+C6	2026-10-31	to-spec	specs/scanning.md	Claude Opus 5.5	-	changedFromGit: Changed files come from git status; without git, every node counts as changed and a warning says so
+C11	2026-10-31	to-spec	specs/retiring.md	Claude Opus 5.5	-	ledgerFormat: The ledger is decisions/RETIRED, tab-separated, append-only; deletion needs a ledger line
+C9	2026-10-31	to-spec	specs/retiring.md	Claude Opus 5.5	-	moveCommand: dte move writes the new node, supersedes the old, and rewrites citations and child parents
+C22	2026-10-31	to-spec	specs/retiring.md	Claude Opus 5.5	-	contestWritesWinner: retire carries contested_by to a contest winner; contest --record can write it and retire the loser
+C13	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	initScaffold: dte init scaffolds decisions/ with inbox/, a commented dte.cfg, and .dteignore, never overwriting
+C14	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	citeAndHook: dte cite inserts a citation in the file's comment syntax; dte hook installs a pre-commit validate
+C18	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	setCommand: dte set writes one whitelisted field (title, confidence), guards human-held nodes, logs History
+C17	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	contestCommand: dte contest prints the node, its parents as rubric and the alternative slots; --record writes it
+C20	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	bodyFileAndImport: new --body-file takes the body verbatim; dte import lifts a folder of node files parent-first
+C12	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	exportJson: dte export emits one JSON document of nodes, citations, ledger, and inbox for a file-path join
+C25	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	vendorCommand: dte vendor --from <DTE> copies the rule files and a DECISIONS.md render, stamped and ignored
+C26	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	specCommand: dte spec <ID> renders a spec skeleton from a node and its subtree for a tree agent to fill
+C27	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	builderBrief: dte brief --builder <spec> briefs an agent that holds no ring; dte gap files a spec gap in the inbox
+C7	2026-10-31	to-spec	specs/commands.md	Claude Opus 5.5	-	printChangedNodes: validate prints the uncommitted node changes as ID plus title so the agent can report them verbatim

@@ -1,4 +1,4 @@
-"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,C11,B29,C12,C13,C14,B27
+"""Tests for tools/dte.py.  dte:B6,C2,B4,B24,B11,B14,B15,B29,B27
 
 Run: python -m unittest discover -s tests
 """
@@ -248,7 +248,7 @@ class TestInbox(Base):
 
 
 class TestAuthority(Base):
-    """dte:B13, dte:B15, dte:C6"""
+    """dte:B13, dte:B15, dte:B15"""
 
     def test_authority_map(self):
         write_file(self.root, "dte.cfg", "authority = A:human, B:orchestrator, C+:subagent\n")
@@ -286,15 +286,15 @@ class TestAuthority(Base):
         self.assertEqual(code, 0, out)
 
     def test_validate_lists_changed_nodes(self):
-        # dte:C7
+        # dte:B17
         self._init_repo()
         write_node(self.root, id="C2", parents="B1", made_by="ai", title="a fresh node")
         code, out = run(self.root, "validate")
-        self.assertIn("Nodes changed in this working tree", out)
+        self.assertIn("Leaves changed in this working tree", out)
         self.assertIn("C2 a fresh node", out)
 
     def test_renamed_node_file_is_error(self):
-        # dte:C11  git mv is not a move
+        # dte:B24  git mv is not a move
         self._init_repo()
         self._git("mv", "decisions/B/B2.md", "decisions/B/B9.md")
         code, out = run(self.root, "validate")
@@ -324,7 +324,7 @@ class TestAuthority(Base):
 
 
 class TestScope(Base):
-    """dte:B21, dte:C8"""
+    """dte:B21, dte:B21"""
 
     def test_no_reach(self):
         write_node(self.root, id="B3", parents="A1", made_by="ai")
@@ -377,7 +377,7 @@ class TestScope(Base):
 
 
 class TestMove(Base):
-    """dte:B32, dte:C9, dte:B24"""
+    """dte:B32, dte:B32, dte:B24"""
 
     def test_move_deletes_old_and_rewrites_everything(self):
         write_node(self.root, id="D1", parents="C1", made_by="ai")
@@ -453,7 +453,7 @@ class TestMove(Base):
 
 
 class TestRetire(Base):
-    """dte:B24, dte:C11"""
+    """dte:B24, dte:B24"""
 
     def test_supersede_rewrites_and_deletes(self):
         write_node(self.root, id="B3", parents="A1", made_by="ai")
@@ -545,7 +545,7 @@ class TestRetire(Base):
 
 
 class TestAuthoring(Base):
-    """dte:B29, dte:C12, dte:C13"""
+    """dte:B29, dte:B29, dte:B29"""
 
     def test_new_writes_a_valid_node(self):
         code, out = run(self.root, "new", "C", "--name", "auto1", "--title", "A fresh rule", "--by", "agent",
@@ -671,7 +671,7 @@ class TestAuthoring(Base):
 
 
 class TestCiteBriefHook(Base):
-    """dte:C14, dte:B27"""
+    """dte:B29, dte:B27"""
 
     def test_cite_python_and_markdown(self):
         write_file(self.root, "src/new.py", "#!/usr/bin/env python\nprint(1)\n")
@@ -729,7 +729,7 @@ class TestCiteBriefHook(Base):
         self.assertIn("already runs dte", out)
 
     def test_set_writes_whitelisted_fields_and_guards_human_held(self):
-        # dte:C18, dte:B29
+        # dte:B29, dte:B29
         code, out = run(self.root, "set", "B1", "title", "A  new   title", "--by", "agent")
         self.assertEqual(code, 0, out)
         text = self._read("decisions/B/B1.md")
@@ -756,7 +756,7 @@ class TestCiteBriefHook(Base):
         self.assertEqual(code, 2)
 
     def test_contest_runs_once_and_records_the_verdict(self):
-        # dte:C17, dte:B60
+        # dte:B60, dte:B60
         code, out = run(self.root, "contest", "B1")
         self.assertEqual(code, 0, out)
         self.assertIn("CONTEST B1", out)
@@ -880,7 +880,7 @@ if __name__ == "__main__":
 
 
 class TestVault(Base):
-    # dte:B30, dte:B31, dte:C19
+    # dte:B30, dte:B31, dte:B30
 
     def test_wikilink_parents_and_quoted_title_are_read(self):
         write_node(self.root, id="C2", parents='"[[B1]]"', title='"colon: inside"', made_by="ai")
@@ -950,7 +950,7 @@ class TestVault(Base):
 
 
 class TestFeedbackRound(Base):
-    # dte:B33, dte:B61, dte:B37, dte:C20, dte:C21, dte:C22, dte:C23, dte:C24
+    # dte:B33, dte:B61, dte:B37, dte:B33, dte:C21, dte:B60, dte:C23, dte:B37
 
     def test_validate_is_a_summary_and_unratified_lists(self):
         code, out = run(self.root, "validate")
@@ -1354,7 +1354,7 @@ class TestZeroTwo(Base):
         b1 = self._read("decisions/B/B1.md")
         self.assertIn("## Consequences\n\n- x", b1)
         self.assertIn("C1 aspectOf folded in", b1)
-        self.assertIn("dte:B1", self._read("src/a.py"))
+        self.assertIn("dte" ":B1", self._read("src/a.py"))
         self.assertIn("parents: [B1]", self._read("decisions/D/D1.md"))
         self.assertIn("\tfolded\tB1\t", self._read("decisions/RETIRED"))
         self.assertEqual(self._validate()[0], 0)
@@ -1368,9 +1368,9 @@ class TestZeroTwo(Base):
         code, out = run(self.root, "to-spec", "C1", "specs/loading.md", "--by", "agent")
         self.assertEqual(code, 0, out)
         spec = self._read("specs/loading.md")
-        self.assertIn("dte:B1", spec.split("\n")[0])
+        self.assertIn("dte" ":B1", spec.split("\n")[0])
         self.assertIn("## Load the cache first\n\nx", spec)
-        self.assertIn("dte:B1", self._read("src/a.py"))
+        self.assertIn("dte" ":B1", self._read("src/a.py"))
         self.assertIn("parents: [B1]", self._read("decisions/D/D1.md"))
         self.assertIn("\tto-spec\tspecs/loading.md\t", self._read("decisions/RETIRED"))
         self.assertEqual(self._validate()[0], 0)
@@ -1383,7 +1383,7 @@ class TestZeroTwo(Base):
         code, out = run(self.root, "renumber", "C1", "--by", "agent")
         self.assertEqual(code, 0, out)
         self.assertIn("uuid: " + uuid, self._read("decisions/C/C2.md"))
-        self.assertIn("dte:C2", self._read("src/a.py"))
+        self.assertIn("dte" ":C2", self._read("src/a.py"))
         code, out = run(self.root, "validate", "--as", "C")
         self.assertNotIn("deleted with no ledger line", out)
         self.assertNotIn("renamed", out)
@@ -1404,7 +1404,7 @@ class TestZeroTwo(Base):
         code, out = run(self.root, "merge-ids", base, "--by", "agent")
         self.assertEqual(code, 0, out)
         self.assertIn("renumbered C2 -> C3", out)
-        self.assertIn("dte:C3", self._read("src/f.py"))
+        self.assertIn("dte" ":C3", self._read("src/f.py"))
         self.assertIn("feature's C2", self._read("decisions/C/C3.md"))
         self.assertIn("no id collisions", run(self.root, "merge-ids", base, "--by", "agent")[1])
 
@@ -1435,3 +1435,18 @@ class TestZeroTwo(Base):
             self.assertNotIn("no ring declared", self._validate()[1])
         finally:
             del os.environ["DTE_OWNER"]
+
+    def test_editorial_replace_sweeps_titles_and_bodies_but_not_history(self):
+        p = "decisions/B/B1.md"
+        write_file(self.root, p, self._read(p).replace("\nx\n", "\nEvery node counts. Nodes too.\n")
+                   .replace("title: B1 title", 'title: "A node rule"') + "\n## History\n\n- made as a node\n")
+        self._init_repo()
+        code, out = run(self.root, "editorial", "--by", "agent", "--note", "node -> leaf",
+                        "--replace", "nodes=leaves", "--replace", "node=leaf")
+        self.assertEqual(code, 0, out)
+        text = self._read(p)
+        self.assertIn('title: "A leaf rule"', text)
+        self.assertIn("Every leaf counts. Leaves too.", text)
+        self.assertIn("- made as a node", text)
+        self.assertNotIn("no new History line", self._validate()[1])
+        self.assertIn("node -> leaf", self._read("decisions/EDITORIAL"))
