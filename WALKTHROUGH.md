@@ -320,8 +320,11 @@ Rules:
   1. Decide only at ring C or deeper. Create decisions with
      `python dte.py new C --name <camelCase> --title "..." --by <you> --parents <ids> --decision "..." --why "..."`.
      A leaf is a call a person could make in plain words; a sentence that would still be true had the
-     opposite been chosen is mechanics and goes in the spec (B47). A child decides a question its parent
-     leaves open; one that only details its parent folds back into it (B48).
+     opposite been chosen is mechanics and goes in the spec (B47). Keep leaves for calls with stakes:
+     if the owner wouldn't want to be asked before it flips, record it in the spec instead (B63).
+     A leaf is whole read alone. A child decides a question its parent leaves open; one that finishes
+     or details its parent folds back into it (B48). Spec text is yours to change; a part that must be
+     frozen becomes a leaf, proposed through the inbox (B64).
   2. Anything that belongs at ring B or shallower, or whose ring is unclear, is not yours:
      write decisions/inbox/<slug>.md and ask orchestrator.
   3. Cite what your work serves: `python dte.py cite <file> <ID>`. Refer to every decision as ID plus its name.
