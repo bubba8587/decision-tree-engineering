@@ -17,6 +17,7 @@ import dte  # noqa: E402
 
 NODE = """---
 id: {id}
+uuid: {uuid}
 title: {title}
 status: {status}
 parents: [{parents}]
@@ -28,7 +29,7 @@ by: tester
 date: 2026-09-02
 ratified_by: {ratified_by}
 authorized_by: {authorized_by}
----
+{aliases}---
 
 ## Decision
 x
@@ -63,6 +64,8 @@ def write_node(root, **kw):
               "ratified_by", "authorized_by"):
         kw.setdefault(f, "")
     kw.setdefault("made_by", "human")
+    kw.setdefault("uuid", dte.new_uuid(0, kw["id"]))
+    kw["aliases"] = ("aliases: [%s]\n" % kw.pop("name")) if kw.get("name") else ""
     ring = kw["id"][0]
     d = os.path.join(root, "decisions", ring)
     os.makedirs(d, exist_ok=True)
@@ -161,10 +164,13 @@ class TestValidate(Base):
         p = os.path.join(self.root, "decisions", "B", "B1.md")
         with open(p, encoding="utf-8") as fh:
             text = fh.read()
-        write_file(self.root, "decisions/B/B1.md", text.replace("made_by:", "aliases: [B9]\nmade_by:"))
+        write_file(self.root, "decisions/B/B1.md", text.replace("made_by:", "aliases: [oneName, twoName]\nmade_by:"))
         code, out = run(self.root, "validate")
         self.assertEqual(code, 1)
-        self.assertIn("aliases must be exactly the name", out)
+        self.assertIn("aliases holds one name, not 2", out)
+        write_file(self.root, "decisions/B/B1.md", text.replace("made_by:", "aliases: [B9]\nmade_by:"))
+        code, out = run(self.root, "validate")
+        self.assertIn("dte set B1 name <camelCase>", out)   # feedback item 1: the error names the fix
 
     def test_long_title_warns(self):
         # dte:B16
@@ -336,10 +342,19 @@ class TestScope(Base):
         self.assertIn("promote it, or split it", out)
 
     def test_skipped_ring(self):
-        write_node(self.root, id="C2", parents="A1")
+        write_node(self.root, id="A1", made_by="ai")
+        write_node(self.root, id="C2", parents="A1", made_by="ai")
         code, out = run(self.root, "scope")
         self.assertIn("SKIPPED RING (1)", out)
         self.assertIn("a ring B decision is missing, or C2 belongs at ring B", out)
+
+    def test_a_skip_the_owner_made_or_accepted_is_not_a_finding(self):
+        # feedback item 4: a skip under a human-held parent, or on a human-held leaf, is deliberate
+        write_node(self.root, id="C2", parents="A1", made_by="ai")   # A1 is human-made in the fixture
+        self.assertNotIn("SKIPPED RING", run(self.root, "scope")[1])
+        write_node(self.root, id="A1", made_by="ai")
+        write_node(self.root, id="C2", parents="A1", made_by="ai", ratified_by="owner")
+        self.assertNotIn("SKIPPED RING", run(self.root, "scope")[1])
 
     def test_core_only_code(self):
         write_file(self.root, "src/e.py", "# %s\n" % ("dte" + ":A1"))
@@ -379,8 +394,9 @@ class TestMove(Base):
         new = self._read("decisions/B/B3.md")
         self.assertIn("id: B3", new)
         self.assertIn("parents: [A1]", new)
-        self.assertIn("supersedes: [C1]", new)
+        self.assertNotIn("supersedes: [C1]", new)   # the ledger line is the record (B43)
         self.assertIn("moved from C1 to ring B as B3 by owner", new)
+        self.assertIn("C1", run(self.root, "blast", "B3")[1].split("Currently superseded")[1])
         self.assertIn("dte:B3", self._read("src/a.py"))
         self.assertNotIn("dte:C1", self._read("src/a.py"))
         self.assertIn("parents: [B3]", self._read("decisions/D/D1.md"))
@@ -446,7 +462,8 @@ class TestRetire(Base):
         self.assertIn("REVIEW", out)
         self.assertIn("C1 C1 title", out)
         self.assertFalse(os.path.exists(os.path.join(self.root, "decisions", "B", "B1.md")))
-        self.assertIn("supersedes: [B1]", self._read("decisions/B/B3.md"))
+        self.assertNotIn("supersedes: [B1]", self._read("decisions/B/B3.md"))
+        self.assertIn("B1", run(self.root, "blast", "B3")[1].split("Currently superseded")[1])
         self.assertIn("parents: [B3]", self._read("decisions/C/C1.md"))
         self.assertIn("B1\t", self._read("decisions/RETIRED"))
         self.assertIn("\tsuperseded\tB3\t", self._read("decisions/RETIRED"))
@@ -530,30 +547,31 @@ class TestAuthoring(Base):
     """dte:B29, dte:C12, dte:C13"""
 
     def test_new_writes_a_valid_node(self):
-        code, out = run(self.root, "new", "C", "--title", "A fresh rule", "--by", "agent",
-                        "--parents", "B1", "--decision", "d", "--why", "w", "--confidence", "medium")
+        code, out = run(self.root, "new", "C", "--name", "auto1", "--title", "A fresh rule", "--by", "agent",
+                        "--parents", "B1", "--decision", "d", "--why", "w")
         self.assertEqual(code, 0, out)
         self.assertIn('created C2 "A fresh rule"', out)
         text = self._read("decisions/C/C2.md")
         self.assertIn("id: C2", text)
         self.assertIn("parents: [B1]", text)
-        self.assertIn("made_by: ai", text)
-        self.assertIn("confidence: medium", text)
+        self.assertNotIn("made_by", text)    # ai is the default; written only when it is not (B43)
+        self.assertIn("uuid: ", text)
+        self.assertNotIn("supersedes", text)  # the ledger records succession (B43)
         code, out = run(self.root, "validate")
         self.assertEqual(code, 0, out)
         self.assertNotIn("TODO", out)
 
     def test_new_without_text_warns_todo(self):
-        run(self.root, "new", "C", "--title", "Half done", "--by", "agent", "--parents", "B1")
+        run(self.root, "new", "C", "--name", "auto2", "--title", "Half done", "--by", "agent", "--parents", "B1")
         code, out = run(self.root, "validate")
         self.assertEqual(code, 0, out)
         self.assertIn("C2: body still has a TODO placeholder", out)
 
     def test_new_refuses_bad_parent(self):
-        code, out = run(self.root, "new", "B", "--title", "x", "--by", "agent", "--parents", "B1")
+        code, out = run(self.root, "new", "B", "--name", "auto3", "--title", "x", "--by", "agent", "--parents", "B1")
         self.assertEqual(code, 2)
         self.assertIn("not shallower", out)
-        code, out = run(self.root, "new", "A", "--title", "x", "--by", "owner", "--made-by", "human")
+        code, out = run(self.root, "new", "A", "--name", "auto4", "--title", "x", "--by", "owner", "--made-by", "human")
         self.assertEqual(code, 0, out)
         self.assertIn("created A2", out)
 
@@ -587,7 +605,7 @@ class TestAuthoring(Base):
         self.assertIn("proposed -> active", out)
         text = self._read("decisions/B/B1.md")
         self.assertIn("ratified_by: owner", text)
-        self.assertIn("status: active", text)
+        self.assertNotIn("status:", text)   # active is the default (B43)
         code, out = run(self.root, "ratify", "B2", "--by", "owner")
         self.assertEqual(code, 2)   # human-made
 
@@ -717,10 +735,8 @@ class TestCiteBriefHook(Base):
         self.assertIn('title: "A new title"', text)   # titles are quoted YAML (dte:C1)
         self.assertIn("title changed from", text)
         code, out = run(self.root, "set", "B1", "confidence", "low", "--by", "agent")
-        self.assertEqual(code, 0, out)
-        self.assertIn("confidence: low", self._read("decisions/B/B1.md"))
-        code, out = run(self.root, "set", "B1", "confidence", "certain", "--by", "agent")
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 2)   # 0.2 dropped the field (B43)
+        self.assertIn("Why", out)
         code, out = run(self.root, "set", "B1", "status", "reverted", "--by", "agent")
         self.assertEqual(code, 2)   # invariant-bearing field: redirected to its command
         self.assertIn("retire", out)
@@ -780,6 +796,8 @@ class TestCiteBriefHook(Base):
         self.assertEqual(code, 1)
         self.assertIn("C1: ORPHAN", out)
         code, out = run(self.root, "reparent", "C1", "--parents", "B2", "--by", "agent")
+        self.assertEqual(code, 2, out)   # C1 is human-made: a re-parent needs a human's name (B11)
+        code, out = run(self.root, "reparent", "C1", "--parents", "B2", "--by", "agent", "--authorized-by", "owner")
         self.assertEqual(code, 0, out)
         self.assertIn("parents: [B2]", self._read("decisions/C/C1.md"))
         code, out = run(self.root, "validate")
@@ -877,7 +895,7 @@ class TestVault(Base):
 
     def test_links_wikilink_writes_that_form(self):
         write_file(self.root, "dte.cfg", "links = wikilink\n")
-        code, out = run(self.root, "new", "C", "--title", "t: u", "--by", "agent", "--parents", "B1")
+        code, out = run(self.root, "new", "C", "--name", "auto5", "--title", "t: u", "--by", "agent", "--parents", "B1")
         self.assertEqual(code, 0, out)
         text = self._read("decisions/C/C2.md")
         self.assertIn('parents: ["[[B1]]"]', text)
@@ -891,7 +909,7 @@ class TestVault(Base):
         write_file(self.root, "decisions/B/B1.md", p.replace("ratified_by: ", "ratified_by: null"))
         code, out = run(self.root, "validate")
         self.assertEqual(code, 0, out)
-        write_file(self.root, "decisions/B/B1.md", p.replace("made_by:", "aliases: [x]\nmade_by:"))
+        write_file(self.root, "decisions/B/B1.md", p.replace("made_by:", "aliases: [x, y]\nmade_by:"))
         code, out = run(self.root, "validate")
         self.assertEqual(code, 1)
 
@@ -916,7 +934,7 @@ class TestVault(Base):
         code, out = run(self.root, "new", "C", "--name", "shareImpl", "--title", "t", "--by", "agent", "--parents", "B1")
         self.assertEqual(code, 0, out)
         text = self._read("decisions/C/C2.md")
-        self.assertIn("name: shareImpl", text)
+        self.assertNotIn("name: shareImpl", text)   # the first alias is the name (B32)
         self.assertIn("aliases: [shareImpl]", text)
         code, out = run(self.root, "tree")
         self.assertIn("C2 shareImpl: t", out)
@@ -956,15 +974,16 @@ class TestFeedbackRound(Base):
 
     def test_body_file_and_import(self):
         write_file(self.root, "body.md", "## Decision\n\nD `x: y`\n\n## Why\n\nW\n")
-        code, out = run(self.root, "new", "C", "--title", "t", "--by", "a", "--parents", "B1", "--body-file", os.path.join(self.root, "body.md"))
+        code, out = run(self.root, "new", "C", "--name", "auto6", "--title", "t", "--by", "a", "--parents", "B1", "--body-file", os.path.join(self.root, "body.md"))
         self.assertEqual(code, 0, out)
         self.assertIn("D `x: y`", self._read("decisions/C/C2.md"))
-        write_file(self.root, "old/one.md", "---\nring: B\nname: oneRule\ntitle: rule one\nparents: [A1]\nratified_by: owner\nconfidence: high\n---\n## Decision\n\nd1\n\n## Why\n\nw1\n")
+        write_file(self.root, "old/one.md", "---\nring: B\nname: oneRule\ntitle: rule one\nparents: [A1]\nratified_by: owner\n---\n## Decision\n\nd1\n\n## Why\n\nw1\n")
         write_file(self.root, "old/two.md", "---\nring: C\ntitle: rule two\nparents: [oneRule, B2]\n---\n## Decision\n\nd2\n\n## Why\n\nw2\n")
         write_file(self.root, "old/three.md", "---\nring: D\ntitle: rule three\nparents: [two]\n---\n## Decision\n\nd3\n\n## Why\n\nw3\n")
         code, out = run(self.root, "import", os.path.join(self.root, "old"), "--by", "agent")
         self.assertEqual(code, 0, out)
-        self.assertIn("imported 3 nodes", out)
+        self.assertIn("imported 3 leaves", out)
+        self.assertIn("aliases: [oneRule]", self._read("decisions/B/B3.md"))
         b3 = self._read("decisions/B/B3.md")
         self.assertIn("ratified_by: owner", b3)
         self.assertIn("imported from", b3)
@@ -1027,9 +1046,8 @@ class TestFeedbackRound(Base):
         code, out = run(self.root, "show", "B1")
         self.assertIn("specified by:", out)
         code, out = run(self.root, "coverage")
-        self.assertIn("no citing test", out)
-        self.assertIn("B1", out.split("no citing test")[1])
-        self.assertNotIn("C1", out.split("no citing test")[1])
+        self.assertIn("specs         1/1", out)   # specs/a.md cites B1 (B45)
+        self.assertIn("MUSTs         0/0", out)
         code, out = run(self.root, "scope")
         self.assertNotIn("B2", out)   # instructed by CLAUDE.md counts as reach (K9)
 
@@ -1047,17 +1065,28 @@ class TestFeedbackRound(Base):
     def test_vendor_copies_rules_renders_decisions_and_ignores_them(self):
         code, out = run(self.root, "vendor", "--from", os.path.join(HERE, ".."))
         self.assertEqual(code, 0, out)
-        for f in ("CLAUDE.md", "SPEC.md", "ADOPTING.md", "README.md", "DECISIONS.md"):
+        for f in ("PROTOCOL.md", "SPEC.md", "ADOPTING.md", "README.md", "WALKTHROUGH.md", "DECISIONS.md"):
             text = self._read("vendor/dte/" + f)
             self.assertTrue(text.startswith("<!-- vendored from DTE "), f)
         dec = self._read("vendor/dte/DECISIONS.md")
         self.assertNotIn(os.path.abspath(os.path.join(HERE, "..")), dec)   # no local path in what ships
+        # feedback items 2, 3: the stamp is the copy's own refresh command, --dir included
+        self.assertIn("refresh with: python tools/dte.py vendor --from <a DTE checkout> --dir vendor/dte -->", dec)
+        self.assertTrue(os.path.isfile(os.path.join(self.root, "tools", "dte.py")))
         self.assertIn("## Ring A", dec)
         self.assertIn("B39 vendoredRules", dec)
         self.assertIn("**Decision.**", dec)
-        self.assertIn("vendor/dte/*", self._read(".dteignore"))
+        self.assertIn("vendor/dte/", self._read(".dteignore"))
+        write_file(self.root, ".dteignore", self._read(".dteignore") + "tools/dte.py\n")
         code, out = run(self.root, "validate")
         self.assertEqual(code, 0, out)   # DTE's own citations do not leak into this tree (I1)
+        code, out = run(self.root, "vendor", "--from", os.path.join(HERE, ".."))
+        self.assertEqual(self._read(".dteignore").count("vendor/dte"), 1)   # feedback item 15: no duplicate entry
+        self.assertIn("No A or B leaf of DTE changed", out)
+        # a stale render missing a B leaf: the next vendor names it as new (feedback item 10)
+        write_file(self.root, "vendor/dte/DECISIONS.md", dec.replace("### B39 ", "### X39 "))
+        code, out = run(self.root, "vendor", "--from", os.path.join(HERE, ".."))
+        self.assertIn("new      B39 vendoredRules", out)
         code, out = run(self.root, "vendor", "--from", self.root)
         self.assertEqual(code, 2)
         self.assertIn("not a DTE checkout", out)
@@ -1085,8 +1114,8 @@ class TestFeedbackRound(Base):
         self.assertNotIn("## Contest", text)
         self.assertNotIn("opposite: lost", text)
         self.assertIn("## Alternatives considered\n\n- a flag instead\n", text)
-        self.assertIn("ratified by owner; contest section dropped", text)
-        self.assertIn("- 2026-09-02 created.", text)
+        self.assertIn("ratified by owner; earlier contest and history in git", text)
+        self.assertNotIn("- 2026-09-02 created.", text)   # a ratified leaf is present governance (B41)
         write_file(self.root, p, text + "\n## Contest\n\n- back again\n")
         code, out = run(self.root, "validate")
         self.assertIn("ratified but still carries", out)
