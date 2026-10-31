@@ -2468,12 +2468,12 @@ def _sweep(text, pairs):
     return text
 
 
-def apply_sweep(tree, pairs, authorized_by):
+def apply_sweep(tree, pairs, authorized_by, skip=()):
     """Rewrite titles and bodies (History and Contest kept as they were) of every in-effect leaf. Returns the leaves
     changed, or None when a human-held one would change without a human's name."""
     changed = []
     for node in tree.ordered_leaves():
-        if not node.in_effect:
+        if not node.in_effect or node.id in skip:   # a leaf that quotes the old word on purpose
             continue
         text = read_text(node.path)
         nl = "\r\n" if "\r\n" in text else "\n"
@@ -2516,7 +2516,7 @@ def cmd_editorial(tree, args):
                 print("--replace takes OLD=NEW, got %r" % r)
                 return 2
             pairs.append((old, new))
-        done = apply_sweep(tree, pairs, args.authorized_by)
+        done = apply_sweep(tree, pairs, args.authorized_by, set(split_ids(",".join(args.skip))))
         if done is None:
             return 2
         print("swept %d leaves: %s" % (len(done), ", ".join(done) or "none"))
@@ -3916,6 +3916,8 @@ def main(argv=None):
                     help="whole-word replacement over every in-effect leaf's title and body, History kept; repeatable")
     ed.add_argument("--authorized-by", dest="authorized_by", default=None,
                     help="the human authorising a sweep that touches human-held leaves (B11)")
+    ed.add_argument("--skip", action="append", default=[], metavar="ID",
+                    help="leave this leaf out of --replace (one that quotes the old word on purpose); repeatable")
     sub.add_parser("upgrade")
     st = sub.add_parser("set")
     st.add_argument("id")

@@ -1,6 +1,6 @@
 # Using the tree from here
 
-**Tell an agent something.** Tag a node, or drop a note in `outbox/`. The next session picks it up.
+**Tell an agent something.** Tag a leaf, or drop a note in `outbox/`. The next session picks it up.
 
 | Tag | Means |
 |---|---|
@@ -15,6 +15,6 @@ Tags go in the `tags` property or inline in the body. Typing your name into `rat
 
 **Find things.** `[[C19]]` by ID, `[[bothLinkForms]]` by name. `DTE.base` has the Outbox, Unratified, Contested, Inbox and All views.
 
-**Never.** Rename or delete a node file, or change `id`, `parents`, `status`. Those go through the tool.
+**Never.** Rename or delete a leaf file, or change `id`, `parents`, `status`. Those go through the tool.
 
 **Agent side.** `python tools/dte.py outbox` lists what you left, `--done <ID or note>` clears it, `validate` prints the count. Details: `SPEC.md` section 7, Outbox.
