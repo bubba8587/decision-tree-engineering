@@ -1090,7 +1090,7 @@ class TestFeedbackRound(Base):
         self.assertIn("new      B39 vendoredRules", out)
         code, out = run(self.root, "vendor", "--from", self.root)
         self.assertEqual(code, 2)
-        self.assertIn("not a DTE checkout", out)
+        self.assertIn("not a DTE 0.2 checkout", out)
 
     def test_contest_prompt_weighs_an_incident_free_why(self):
         code, out = run(self.root, "contest", "B1")

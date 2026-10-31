@@ -313,7 +313,7 @@ def _scalar(raw):
         raw = raw.replace("''", "'") if q == "'" else raw.replace('\\"', '"').replace("\\\\", "\\")
     elif raw in ("null", "~", "Null", "NULL"):   # Obsidian writes an emptied property as null
         return ""
-    m = LINK_RE.fullmatch(raw)   # "[[B59]]" in a link field reads as B7
+    m = LINK_RE.fullmatch(raw)   # a quoted wikilink in a link field reads as the bare id
     return m.group(1) if m else raw
 
 
@@ -1095,7 +1095,7 @@ class Tree:
             old = self.node_at_head(rel)
             if old is None:
                 continue
-            # whitespace-insensitive: a reflow for the reading surface is not a body edit (B36)
+            # whitespace-insensitive: a reflow for the reading surface is not a body edit (B61)
             strip = lambda b: re.sub(r"\s+", " ", re.sub(r"\n## History\n.*", "", b.replace("\r\n", "\n"), flags=re.S)).strip()
             if strip(old.body) != strip(node.body):
                 hist = lambda b: [l for l in b.replace("\r\n", "\n").split("\n") if l.startswith("- ")]
@@ -1802,7 +1802,7 @@ def cmd_place(tree, args):
         print("no inbox item named %r; run: dte inbox" % args.slug)
         return 2
     if item.kind == "gap":
-        print("%s is a spec gap, not a decision: answer it in %s, then remove the file (C27)" % (args.slug, item.spec))
+        print("%s is a spec gap, not a decision: answer it in %s, then remove the file (B42)" % (args.slug, item.spec))
         return 2
     parents = [p.strip() for p in (args.parents or "").split(",") if p.strip()] or item.parents
     if ring == "A" and parents:
@@ -2138,6 +2138,9 @@ COVERAGE_TEMPLATE = """# Coverage exclusions (dte coverage). An artifact that ci
 # belong to that group. Excluded files are still scanned: a citation inside one still
 # counts, and a glob that matches nothing is reported as stale. Everything not listed
 # here is expected to cite.
+why: DTE's own scaffolding; no project decision governs it
+dte.cfg
+.dteignore
 #
 # why: package manifests and toolchain configuration serve the build, not a product decision
 # package.json
@@ -2832,7 +2835,7 @@ def cmd_import(tree, args):
         written.append(dest)
         tree.leaves[new_id] = Leaf(dest, parse_frontmatter(text)[0], body)
         print("  %s  <-  %s  %s" % (new_id, key, str(data["title"])[:70]))
-    print("imported %d leaves from %s. They are re-homed content: no contest is owed at import (B28, B33)."
+    print("imported %d leaves from %s. They are re-homed content: no contest is owed at import (B60, B33)."
           % (len(written), source))
     print("  next: dte validate; cite each from what it governs; remove %s when done." % args.dir)
     return 0
@@ -2887,7 +2890,9 @@ def cmd_show(tree, args):
             continue
         print("    %s:" % tree.LAYER_LABEL[layer])
         for rel in sorted(hits):
-            print("      %s  lines %s" % (rel, ", ".join(str(x) for x in sorted(hits[rel]))))
+            lines = [str(x) for x in hits[rel]]
+            nums = [x for x in lines if x.isdigit()]
+            print("      %s  %s" % (rel, ("lines " + ", ".join(sorted(nums, key=int))) if nums else lines[0]))
     if node.supersedes:
         print("  supersedes: " + ", ".join(node.supersedes))
     if node.superseded_by:
@@ -2989,7 +2994,7 @@ def ratify_one(tree, i, by):
                                         "; status proposed -> active" if flipped else ""))
     print("  it is now human-held (B11); the owner may reword it in their own voice")
     if dropped:
-        print("  dropped %s (B41); the commit before this one keeps them" % ", ".join(dropped))
+        print("  dropped %s (B62); git keeps what was dropped" % ", ".join(dropped))
     return 0
 
 
@@ -3148,7 +3153,7 @@ def cmd_brief(tree, args):
     print("     Before you finish, run `DTE_RING=%s python %s validate`; it must print OK." % (ring, tool))
     print("  5. Before acting under a leaf marked unratified and not contested, run `python %s contest <ID>`" % tool)
     print("     and follow it: build the alternatives, scope their cost, judge by the parents, record the verdict.")
-    print("     A contested or ratified leaf is settled: act on it and never re-ask (A7, B28).")
+    print("     A contested or ratified leaf is settled: act on it and never re-ask (A7, B60).")
     print("     A leaf marked imported was re-homed, not decided; its contest is owed before the first new work under it.")
     print()
     print("Decisions above your ring that bind you%s (%d):" % (scope_note, len(above)))
@@ -3471,13 +3476,13 @@ def cmd_contest(tree, args):
         print("%s is %s; only in-effect leaves are contested" % (args.id, node.status))
         return 2
     if node.human_held:
-        print("%s is human-held; a human-made or ratified leaf is settled and is never contested (B28)" % args.id)
+        print("%s is human-held; a human-made or ratified leaf is settled and is never contested (B60)" % args.id)
         return 2
     if args.record:
         return record_contest(tree, node, args)
     if node.contested_by and not args.again:
         print("%s was already contested by %s; it is settled until a human ratifies it or an agent"
-              " supersedes it (B28, A7)" % (args.id, node.contested_by))
+              " supersedes it (B60, A7)" % (args.id, node.contested_by))
         print("  pass --again to run a second contest anyway")
         return 2
     cites = sorted({rel for rel, ln, cid, r in tree.citations if r == node.id})
@@ -3548,7 +3553,7 @@ def record_contest(tree, node, args):
     if args.chosen != "keep" and (args.title or args.retire):   # dte:B60 one step from verdict to tree
         return settle_contest(tree, node, args)
     if args.chosen == "keep":
-        print("  %s is settled; act on it without re-asking until a human ratifies or supersedes it (A7, B28)" % node.id)
+        print("  %s is settled; act on it without re-asking until a human ratifies or supersedes it (A7, B60)" % node.id)
     elif args.chosen == "deletion":
         print("  next: python %s retire %s --by <you>   then reconcile what `blast %s` listed" % (tool, node.id, node.id))
     else:
@@ -3859,7 +3864,7 @@ def main(argv=None):
     n.add_argument("--title", required=True)
     n.add_argument("--name", default=None, help="readable camelCase handle, unique; becomes the Obsidian alias")
     n.add_argument("--body-file", dest="body_file", default=None,
-                   help="markdown file whose sections become the body verbatim (C20); beats --decision/--why")
+                   help="markdown file whose sections become the body verbatim (B33); beats --decision/--why")
     n.add_argument("--by", required=True)
     n.add_argument("--parents", default=None, help="comma-separated parent ids")
     n.add_argument("--made-by", dest="made_by", default="ai", help="ai | human | joint")
@@ -3934,7 +3939,7 @@ def main(argv=None):
     ct.add_argument("--note", default=None, help="the alternatives, their scoped costs, and the verdict")
     ct.add_argument("--file", default=None, help="markdown file holding the same, appended before --note")
     ct.add_argument("--again", action="store_true", help="contest a leaf that was already contested")
-    ct.add_argument("--title", default=None, help="with --record and a non-keep verdict: write the winner with this title (C22)")
+    ct.add_argument("--title", default=None, help="with --record and a non-keep verdict: write the winner with this title (B60)")
     ct.add_argument("--name", default=None, help="the winner's camelCase name")
     ct.add_argument("--body-file", dest="body_file", default=None, help="the winner's body; or use --decision/--why")
     ct.add_argument("--decision", default=None)
@@ -3955,7 +3960,7 @@ def main(argv=None):
     br = sub.add_parser("brief")
     br.add_argument("ring", nargs="?", default=None)
     br.add_argument("--under", default=None, metavar="ID", help="restrict binding leaves to one subtree")
-    br.add_argument("--builder", default=None, metavar="SPEC", help="brief an agent that builds to this spec and holds no ring (C27)")
+    br.add_argument("--builder", default=None, metavar="SPEC", help="brief an agent that builds to this spec and holds no ring (B42)")
     sp = sub.add_parser("spec")
     sp.add_argument("id")
     sp.add_argument("--out", default=None, metavar="FILE", help="write the skeleton here instead of stdout")
