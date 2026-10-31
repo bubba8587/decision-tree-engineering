@@ -1,4 +1,4 @@
-<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B7,B10,B11,B12,B13,B14,B15,B16,B21,B32,B29,B27,B30,B31,C19,B33,B34,B35,B36,B37,C20,C21,C22,C23,C24 -->
+<!-- dte:A1,A2,A3,A4,A5,A6,B1,B3,B4,B24,B59,B10,B11,B12,B13,B14,B15,B16,B21,B32,B29,B27,B30,B31,C19,B33,B34,B35,B61,B37,C20,C21,C22,C23,C24 -->
 # DTE Specification (v0)
 
 This document is normative. Words in **bold** are defined terms. Each section cites the decision it derives from; the decision file holds the rationale.
@@ -20,7 +20,7 @@ DTE is not a dependency graph. It records *why*, not *what calls what* (dte:A4, 
 - **Citation**: the token `dte:ID` placed in an artifact, meaning "this exists because of ID" (dte:B3).
 - **Blast radius** of a node: every node that descends from it, every artifact that cites it or any descendant, and every node it currently supersedes (dte:C2).
 - **Precedence**: when two active nodes contradict, the one in the shallower ring wins (dte:B4).
-- **Provenance**: who made the decision: `human`, `ai`, or `joint` (dte:B7).
+- **Provenance**: who made the decision: `human`, `ai`, or `joint` (dte:B59).
 - **Human-held**: a node made by a human, or ratified by one (dte:B11).
 - **Authority**: the ring an agent operates at. It decides at that ring or deeper and asks upward for anything shallower (dte:A6).
 - **Inbox**: where a decision waits, without an ID, until someone with authority places it in a ring (dte:B14).
@@ -35,7 +35,7 @@ DTE is not a dependency graph. It records *why*, not *what calls what* (dte:A4, 
 - The ID appears in the frontmatter `id:` field and is the file name: `decisions/<ring>/<ID>.md`.
 - A `name` is a handle, never a second identity: the tool resolves only IDs (dte:B32). A node **moved** to another ring becomes a new node with a new ID there; the old node stays as a file, `superseded` by the new one, and every citation and child is rewritten in the same change (see section 7). The old file is deleted or kept per `retire` in `dte.cfg`; either way the ledger records it and the number is burned.
 
-## 4. Node format (dte:B1, dte:B7)
+## 4. Node format (dte:B1, dte:B59)
 
 A node is a markdown file with YAML frontmatter. Only the subset of YAML shown here is supported (dte:C1): scalars, inline lists `[a, b]`, and block lists.
 
@@ -54,7 +54,7 @@ by: Claude Fable 5.1      # person or model, free text
 date: 2026-09-02
 ratified_by:              # human who confirmed an ai/joint decision (optional)
 authorized_by:            # human who authorised retiring/moving a human-held node
-contested_by:             # who ran this node's one contest while unratified (dte:B28)
+contested_by:             # who ran this node's one contest while unratified (dte:B60)
 confidence: high          # low | medium | high (optional)
 aliases: [citationToken]  # written by the tool from name so [[name]] resolves in Obsidian
 ---
@@ -73,7 +73,7 @@ One or two sentences. The thing that was decided, stated so it can be cited.
 ## Why
 The reasoning only: what the parents demanded, what was traded off. No
 dates, no account of who said what when; history that matters is a History
-line (dte:B41). If a concrete incident forced this decision, say so in the
+line (dte:B62). If a concrete incident forced this decision, say so in the
 first sentence; there is no field for it (dte:B40). A Why with no incident is preventive judgment, and a
 contest weighs it as the thinner claim.
 
@@ -85,15 +85,15 @@ Optional. A terse list of the other ways this could have gone, one line
 each. It stays; it is part of what the decision means.
 
 ## Contest
-Optional. A contest (dte:B28) records its rubric, the keep, opposite,
+Optional. A contest (dte:B60) records its rubric, the keep, opposite,
 deletion and variant cases with their scoped costs, and the verdict here.
-It informs the ratification and `ratify` deletes it (dte:B41); git keeps
+It informs the ratification and `ratify` deletes it (dte:B62); git keeps
 the text.
 
 ## History
 Optional. One line per event: created, ratified, moved, reworded,
 contested. Nothing else: a node is present governance, not a dev log
-(dte:B41).
+(dte:B62).
 ```
 
 ### Relationship to ADR and MADR
@@ -126,7 +126,7 @@ A node is an Architecture Decision Record with more structure. Against the MADR 
 - **R2 (dte:B4)** Two active nodes that contradict each other are resolved by ring: shallower wins. Two contradicting nodes in the *same* ring are an error; resolve by superseding one or moving one. A node that narrows, excepts or supports another belongs below it as a child (dte:B35): a same-ring contradiction usually means a refinement was filed as a sibling.
 - **R3 (dte:B24, dte:C11)** A node is retired only through the ledger. In delete mode the file is removed and git keeps the text; in keep mode the file stays with `status` set. A deleted node file with no ledger line, or a renamed node file, is an error. Retired numbers are never reissued.
 - **R4 (dte:B24)** An in-effect node whose parent is retired is an **orphan**. Orphans are errors: re-parent, supersede, or revert them. This is how A1 is enforced: reverting a node forces its blast radius to be dealt with, not forgotten.
-- **R5 (dte:B7)** Every node records `made_by` and `by`. AI-made nodes may be `active` without ratification so agents are not blocked, but tools surface every unratified AI node until a human sets `ratified_by`. A decision nobody remembers making is reconstructed as `made_by: ai`, low confidence (dte:B34). A hand edit to a body adds a History line; validate flags a body change without one (dte:B36).
+- **R5 (dte:B59)** Every node records `made_by` and `by`. AI-made nodes may be `active` without ratification so agents are not blocked, but tools surface every unratified AI node until a human sets `ratified_by`. A decision nobody remembers making is reconstructed as `made_by: ai`, low confidence (dte:B34). A hand edit to a body adds a History line; validate flags a body change without one (dte:B61).
 - **R6 (dte:A2)** The goal is total coverage: every artifact cites at least one node. Coverage below 100% is not an error (adoption is incremental, dte:B22) but it is always reported.
 - **R7 (dte:B11)** A human-held node that is superseded, reverted, or moved must carry `authorized_by` naming a human. Off with `protect_human = off`.
 - **R8 (dte:A6, dte:B15)** An agent never places or alters a node shallower than its ring. It writes the decision to the inbox and asks. With `--as <ring>`, validate enforces this on the agent's changed files.
@@ -152,11 +152,11 @@ Then run `dte blast` on each dropped parent, and `dte conflicts` if the node has
 
 **Set a field (dte:B29, dte:C18).** `dte set <ID> title|name|confidence <value> --by <name> [--authorized-by <human>]` is the one generic frontmatter write, for the fields that carry no invariant (`name` is checked for shape and uniqueness and rewrites `aliases`). Every other field belongs to the command that owns its invariant, and `set` names that command when refused. Provenance fields are never changed after creation (dte:A3). The old value goes to History.
 
-**Ratify.** `dte ratify <ID> --by <human>` sets `ratified_by`, flips `proposed` to `active`, drops `## Contest` and logs the drop in one History line (dte:B41). `## Alternatives considered` stays. A ratified node is human-held from then on (dte:B11). `validate` warns when a ratified node still carries a Contest section.
+**Ratify.** `dte ratify <ID> --by <human>` sets `ratified_by`, flips `proposed` to `active`, drops `## Contest` and logs the drop in one History line (dte:B62). `## Alternatives considered` stays. A ratified node is human-held from then on (dte:B11). `validate` warns when a ratified node still carries a Contest section.
 
 **Authorize (dte:C21).** `dte authorize <ID> --by <human> [--note ...]` records a human's go-ahead on a node that already exists: `authorized_by` plus a History line. It is how an owner's "go ahead" reaches a node an agent drafted above its ring, and the only writer of that field.
 
-**Contest (dte:B28).** An unratified node is not a block, but before a tree agent first builds new work under it (a child, a spec, an artifact) the agent runs `dte contest <ID>` (dte:C17). An import owes none (dte:B33). The tool prints the node, its parents as the rubric, and four slots: keep, opposite, deletion, variant. The agent builds each alternative far enough to scope its cost, judges them against the parents alone, and records the verdict with `dte contest <ID> --record --chosen <slot> --by <name> --note "..."`. Parents are read, never reopened. Siblings are not touched. Children and citing artifacts count for nothing, not even as cost: a better node may need none of them. If keep did not win, the agent writes the winner with `new` and retires the loser, or does both in the same run with `--record --chosen variant --title ... --body-file ...` (dte:C22); a successor that carries the loser's contest is marked contested by it. A contested node is settled (dte:A7): it is acted on without re-asking until a human ratifies it or an agent supersedes it; a second contest needs `--again`. Ratification then reviews a comparison with costs, not a bare proposal.
+**Contest (dte:B60).** An unratified node is not a block, but before a tree agent first builds new work under it (a child, a spec, an artifact) the agent runs `dte contest <ID>` (dte:C17). An import owes none (dte:B33). The tool prints the node, its parents as the rubric, and four slots: keep, opposite, deletion, variant. The agent builds each alternative far enough to scope its cost, judges them against the parents alone, and records the verdict with `dte contest <ID> --record --chosen <slot> --by <name> --note "..."`. Parents are read, never reopened. Siblings are not touched. Children and citing artifacts count for nothing, not even as cost: a better node may need none of them. If keep did not win, the agent writes the winner with `new` and retires the loser, or does both in the same run with `--record --chosen variant --title ... --body-file ...` (dte:C22); a successor that carries the loser's contest is marked contested by it. A contested node is settled (dte:A7): it is acted on without re-asking until a human ratifies it or an agent supersedes it; a second contest needs `--again`. Ratification then reviews a comparison with costs, not a bare proposal.
 
 **Declare a contradiction.** `dte conflict <A> <B>` writes `conflicts_with` on both nodes and prints the winner by ring (dte:B4).
 

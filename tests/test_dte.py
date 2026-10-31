@@ -756,7 +756,7 @@ class TestCiteBriefHook(Base):
         self.assertEqual(code, 2)
 
     def test_contest_runs_once_and_records_the_verdict(self):
-        # dte:C17, dte:B28
+        # dte:C17, dte:B60
         code, out = run(self.root, "contest", "B1")
         self.assertEqual(code, 0, out)
         self.assertIn("CONTEST B1", out)
@@ -950,7 +950,7 @@ class TestVault(Base):
 
 
 class TestFeedbackRound(Base):
-    # dte:B33, dte:B36, dte:B37, dte:C20, dte:C21, dte:C22, dte:C23, dte:C24
+    # dte:B33, dte:B61, dte:B37, dte:C20, dte:C21, dte:C22, dte:C23, dte:C24
 
     def test_validate_is_a_summary_and_unratified_lists(self):
         code, out = run(self.root, "validate")

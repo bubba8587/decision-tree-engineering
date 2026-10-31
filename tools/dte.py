@@ -196,7 +196,7 @@ IN_EFFECT = {"proposed", "active"}
 TITLE_MAX = 100          # dte:B16
 INBOX_DIR = "inbox"      # dte:B14
 LEDGER = "RETIRED"       # dte:C11
-EDITORIAL = "EDITORIAL"  # dte:B36 one line per wording-only sweep
+EDITORIAL = "EDITORIAL"  # dte:B61 one line per wording-only sweep
 
 DEFAULTS = {"summaries": True, "protect_human": True, "authority": (),
             "docs": ("*.md", "docs/*"), "broad_fraction": 0.3, "broad_min": 5,   # dte:C8
@@ -313,7 +313,7 @@ def _scalar(raw):
         raw = raw.replace("''", "'") if q == "'" else raw.replace('\\"', '"').replace("\\\\", "\\")
     elif raw in ("null", "~", "Null", "NULL"):   # Obsidian writes an emptied property as null
         return ""
-    m = LINK_RE.fullmatch(raw)   # "[[B7]]" in a link field reads as B7
+    m = LINK_RE.fullmatch(raw)   # "[[B59]]" in a link field reads as B7
     return m.group(1) if m else raw
 
 
@@ -350,7 +350,7 @@ class Leaf:
         self.superseded_by = data.get("superseded_by") or None
         self.ratified_by = data.get("ratified_by") or None
         self.authorized_by = data.get("authorized_by") or None
-        self.contested_by = data.get("contested_by") or None   # dte:B28
+        self.contested_by = data.get("contested_by") or None   # dte:B60
         tags = data.get("tags") or []
         tags = [str(t).lstrip("#") for t in (tags if isinstance(tags, list) else [tags]) if str(t)]
         self.actions = sorted({t for t in tags if t in ACTIONS}
@@ -407,7 +407,7 @@ class Leaf:
         if self.made_by != "human":
             state = "" if self.ratified_by else ", unratified"
             if not self.ratified_by and self.contested_by:
-                state += ", contested"   # dte:B28
+                state += ", contested"   # dte:B60
             tag += " (%s%s)" % (self.made_by, state)
         return "%s %s%s" % (self.id, self.summary, tag)
 
@@ -526,7 +526,7 @@ class Tree:
         except OSError:
             return ""
 
-    # -- editorial log  dte:B36
+    # -- editorial log  dte:B61
     def editorial_path(self):
         return os.path.join(self.decisions_dir, EDITORIAL)
 
@@ -739,7 +739,7 @@ class Tree:
                 W.append("%s: body still has a TODO placeholder; finish it" % i)
             for heading in _empty_sections(node.body):   # a half-done edit leaves a heading with nothing under it
                 W.append("%s: section '%s' is empty; fill it or delete the heading" % (i, heading))
-            if node.ratified_by and "## Contest" in node.body.split("\n"):   # dte:B41
+            if node.ratified_by and "## Contest" in node.body.split("\n"):   # dte:B62
                 W.append("%s: ratified but still carries '## Contest'; a ratified leaf is present governance, drop it" % i)
             # R1 parents  dte:B10
             if node.ring == "A" and node.parents:
@@ -827,7 +827,7 @@ class Tree:
             if b and here and here != "HEAD" and b != here and node.branch:
                 W.append("%s: belongs to branch %s but is on %s; a branch-local subtree never merges out (port the"
                          " finding, not the leaf)" % (node.id, b, here))
-        for node, logged in self.body_changes():   # dte:B36
+        for node, logged in self.body_changes():   # dte:B61
             if not logged:
                 W.append("%s: body changed in this working tree with no new History line; add one, or log a"
                          " wording-only sweep with dte editorial" % node.id)
@@ -1082,7 +1082,7 @@ class Tree:
 
     def body_changes(self):
         """[(leaf, logged)] leaves whose body differs from HEAD; logged when a History line HEAD lacks
-        is present, or a wording-only sweep vouched for this exact body.  dte:B36,C7"""
+        is present, or a wording-only sweep vouched for this exact body.  dte:B61,C7"""
         changed, exact = self.changed_files()
         if not exact:
             return []
@@ -1267,7 +1267,7 @@ def report(tree, show_unratified=True, full=False):
         elif un:
             contested = sum(1 for n in un if n.contested_by)
             imported = sum(1 for n in un if n.imported)
-            print("\nUnratified AI/joint decisions: %d (%d contested, %d imported); list: dte unratified  dte:B7, dte:B28"
+            print("\nUnratified AI/joint decisions: %d (%d contested, %d imported); list: dte unratified  dte:B59, dte:B60"
                   % (len(un), contested, imported))
             top = [n for n in un if ring_depth(n.ring) <= 1]
             if top:   # dte:C23 everything under these inherits an unsettled rule, so they are named
@@ -1283,7 +1283,7 @@ def print_unratified(tree, un=None):
         print("No unratified AI/joint decisions.")
         return
     contested = sum(1 for n in un if n.contested_by)
-    print("Unratified AI/joint decisions (%d, %d contested):  dte:B7, dte:B28" % (len(un), contested))
+    print("Unratified AI/joint decisions (%d, %d contested):  dte:B59, dte:B60" % (len(un), contested))
     for n in un:
         who = ("  contested by %s" % n.contested_by) if n.contested_by else ""
         imp = "  imported" if n.imported else ""
@@ -2460,7 +2460,7 @@ class redirect_quiet:
 
 def cmd_editorial(tree, args):
     """One log line for a wording-only sweep, instead of the same History line on every leaf it touched:
-    each leaf is recorded with a hash of its new body, so a later edit is noticed again.  dte:B36"""
+    each leaf is recorded with a hash of its new body, so a later edit is noticed again.  dte:B61"""
     tree.validate()
     hits = [n for n, logged in tree.body_changes() if not logged]
     if not hits:
@@ -2470,7 +2470,7 @@ def cmd_editorial(tree, args):
     new = not os.path.exists(p)
     with open(p, "a", encoding="utf-8", newline="") as fh:
         if new:
-            fh.write("# Wording-only sweeps. One line each; a leaf's History stays about the decision.  dte:B36\n")
+            fh.write("# Wording-only sweeps. One line each; a leaf's History stays about the decision.  dte:B61\n")
             fh.write("# date\tby\tnote\tleaves (id@body-hash)\n")
         fh.write("\t".join([datetime.date.today().isoformat(), args.by, args.note.replace("\t", " "),
                              " ".join("%s@%s" % (n.id, body_hash(n.body)) for n in hits)]) + "\n")
@@ -2889,7 +2889,7 @@ def cmd_authorize(tree, args):
 
 
 def cmd_ratify(tree, args):
-    """dte:B29, dte:B7"""
+    """dte:B29, dte:B59"""
     rc = 0
     for i in args.ids:
         rc = max(rc, ratify_one(tree, i, args.by))
@@ -2916,7 +2916,7 @@ def ratify_one(tree, i, by):
         text = set_field(text, "status", "active")
     if flipped:
         text = drop_field(text, "status")
-    # dte:B41 a ratified leaf is present governance: the contest and the activity log informed the ruling,
+    # dte:B62 a ratified leaf is present governance: the contest and the activity log informed the ruling,
     # git keeps both, and History restarts at the ratification
     dropped = [h for h in ("## Contest", "## History") if h in text.split("\n")]
     for h in dropped:
@@ -3350,7 +3350,7 @@ def _empty_sections(body):
 
 
 def body_hash(body):
-    """A short hash of a body, whitespace-insensitive, for the editorial log.  dte:B36"""
+    """A short hash of a body, whitespace-insensitive, for the editorial log.  dte:B61"""
     norm = re.sub(r"\s+", " ", body.replace("\r\n", "\n")).strip()
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:12]
 
@@ -3401,7 +3401,7 @@ CONTEST_CHOICES = ("keep", "opposite", "deletion", "variant")
 
 
 def cmd_contest(tree, args):
-    """dte:C17, dte:B28 (one contest per unratified leaf, then it is settled)"""
+    """dte:C17, dte:B60 (one contest per unratified leaf, then it is settled)"""
     tree.validate()
     node = tree.leaves.get(args.id)
     if node is None:
@@ -3423,7 +3423,7 @@ def cmd_contest(tree, args):
     cites = sorted({rel for rel, ln, cid, r in tree.citations if r == node.id})
     kids = tree.children.get(node.id, [])
     tool = os.path.relpath(os.path.abspath(__file__), tree.root).replace(os.sep, "/")
-    print("CONTEST %s  dte:B28" % node.label())
+    print("CONTEST %s  dte:B60" % node.label())
     print()
     for line in node.body.strip().split("\n"):
         print("  " + line)

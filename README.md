@@ -55,7 +55,7 @@ name: citationToken       # the handle: chat says "B3 citationToken"
 ---
 ```
 
-The body is a Decision (one or two citable sentences), a Why (the reasoning and nothing else), Consequences, and a History of one line per event (dte:B41).
+The body is a Decision (one or two citable sentences), a Why (the reasoning and nothing else), Consequences, and a History of one line per event (dte:B62).
 
 Any artifact cites a decision with the token `dte:ID` in a comment or in prose, or as `[[ID]]` when `links = wikilink` is set; `decisions/` then opens directly as an Obsidian vault with lineage as graph edges (dte:B30). Every node has a camelCase `name` beside its `title`; chat says `ID name` (dte:A5, dte:B32).
 

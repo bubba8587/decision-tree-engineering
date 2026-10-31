@@ -1,4 +1,4 @@
-<!-- dte:B8,B14,B15,B17,B18,B19,B20,B25,B28 -->
+<!-- dte:B8,B14,B15,B17,B18,B19,B20,B25,B60 -->
 # Working in this repo (and any DTE repo)
 
 This project uses Decision Tree Engineering. Read `SPEC.md` once. Then follow this protocol in every session. It exists because of B8 "AI agents record each non-trivial decision as a node at the time they make it", which exists because of A3 "every decision records who made it, human or AI".
